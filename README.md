@@ -7,6 +7,6 @@
 # git push -u origin master
 
 
-# git add 
+# git add .
 # git commit -m "satfi"
 # git push -u origin master
