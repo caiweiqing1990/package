@@ -5128,7 +5128,6 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 		case MODIFY_FAMILY_PHONE:
 		{
 			MsgModifyPamilyPhone *req = (MsgModifyPamilyPhone *)pack;
-			satfi_log("MODIFY_FAMILY_PHONE newPhone=%s oldPhone=%s", req->newPhone, req->oldPhone);
 			USER *pUser = gp_users;
 			int i=0;
 			while(pUser)
