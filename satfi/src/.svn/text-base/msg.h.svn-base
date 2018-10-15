@@ -1,0 +1,58 @@
+#ifndef __MSG_H__
+#define __MSG_H__
+
+#include <stdio.h>
+
+typedef struct _msg_header
+{
+  unsigned short length;
+  unsigned short mclass;
+}MsgHeader;
+
+typedef struct _app_connect_req
+{
+  unsigned short length;
+  unsigned short mclass;
+  char userid[24];
+} MsgAppConnectReq;
+
+typedef struct _app_connect_rsp
+{
+  unsigned short length;
+  unsigned short mclass;
+  int result;
+  short n3g_status;
+  short sat_status;
+  char n3g_imei[16];
+  char n3g_imsi[16];
+  char sat_imei[16];
+  char sat_imsi[16];
+}MsgAppConnectRsp;
+
+typedef struct _app_heartbeat_req
+{
+  unsigned short length;
+  unsigned short mclass;
+  int status;
+  char userid[24];
+  
+}MsgAppHeartbeatReq;
+
+typedef struct _app_heartbeat_rsp
+{
+  unsigned short length;
+  unsigned short mclass;
+  int result;
+  short n3g_status;
+  char n3g_imei[16];
+  char n3g_imsi[16];
+  char n3g_csq[32];
+  short sat_status;
+  char sat_imei[16];
+  char sat_imsi[16];
+  char sat_gps[128];
+  char sat_csq[32];
+  char bd_gps[128];
+}MsgAppHeartbeatRsp;
+
+#endif

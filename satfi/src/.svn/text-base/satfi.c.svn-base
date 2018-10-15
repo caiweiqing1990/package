@@ -1,0 +1,2063 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>   /* signal() */
+#include <fcntl.h> /* file control definitions */
+#include <termios.h> /* POSIX terminal control definitions */
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <unistd.h> /* 注意此处：signal.h要先include进来 */
+#include <ctype.h>
+#include <sys/select.h> /* select() */
+
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/stat.h>
+#include <pthread.h>
+
+#include "timer.h"
+#include "msg.h"
+
+#define USERID_LLEN 21  //完整的用户ID长度
+#define USERID_LEN  12  //上传TSC服务器时，只需要传送用户ID的后12位，以节约流量
+#define IMSI_LEN    15  //IMEI和IMSI的长度
+
+pthread_mutex_t sat_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t n3g_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t net_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t gps_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+//3G模块状态
+enum N3G_STATE {
+  N3G_STATE_IDLE = -1,
+  N3G_STATE_AT = 0,
+  N3G_STATE_AT_W,
+  N3G_STATE_IMEI,
+  N3G_STATE_IMEI_W,
+  N3G_STATE_IMSI,
+  N3G_STATE_IMSI_W,
+  N3G_STATE_CSQ,
+  N3G_STATE_CSQ_W,
+  N3G_STATE_DIALING,
+};
+
+//卫星模块状态
+enum SAT_STATE {
+  SAT_STATE_IDLE=-1,
+  SAT_STATE_AT=0,
+  SAT_STATE_AT_W,
+  SAT_STATE_IMEI,
+  SAT_STATE_IMEI_W,
+  SAT_STATE_IMSI,
+  SAT_STATE_IMSI_W,
+  SAT_STATE_GPSTRACK_START,
+  SAT_STATE_GPSTRACK_START_W,
+  SAT_STATE_GPSTRACK_STOP,
+  SAT_STATE_GPSTRACK_STOP_W,
+  SAT_STATE_CSQ,
+  SAT_STATE_CSQ_W,
+  SAT_STATE_DIALING
+};
+
+typedef  struct _n3g
+{
+  int n3g_fd;                //3G模块串口文件
+  int n3g_available;
+  int n3g_status;            //0：command 1：online data
+  enum N3G_STATE n3g_state;
+  int n3g_hb_seconds;
+  int n3g_baud_rate;         //波特率
+  int n3g_csq_value;         //信号强度
+  int n3g_csq_ltime;         //得到信号强度的时间
+  int n3g_dialing;           //是否正在尝试拨号
+  char n3g_ifname[16];
+  char n3g_ifname_a[16];
+  char n3g_imsi[16];
+  char n3g_imei[16];
+  char n3g_dev_name[32];     //3G模块串口设备
+}N3G;
+
+typedef struct _sat
+{
+  int sat_fd;                //SAT模块文件
+  int sat_available;
+  int sat_status;            //0：command 1：online data
+  enum SAT_STATE sat_state;
+  int sat_hb_seconds;
+  int sat_baud_rate;         //波特率
+  int sat_csq_value;         //信号强度
+  int sat_csq_ltime;         //得到信号强的时间
+  int sat_calling;           //是否正在进行呼叫
+  int sat_dialing;           //是否正在尝试拨号
+  char sat_ifname[16];
+  char sat_ifname_a[16];
+  char sat_imsi[16];
+  char sat_imei[16];
+  char sat_dev_name[32];     //SAT模块串口设备
+  char sat_gps[128];         //SAT模块GPS数据
+}SAT;
+
+
+typedef struct _gps
+{
+  int gps_fd;                //北斗GPS模块文件
+  int gps_baud_rate;         //波特率
+  char gps_dev_name[32];     //北斗GPS模块串口设备
+  char gps_bd[128];          //北斗GPS数据
+}GPS;
+
+typedef struct _tsc
+{
+  int tsc_port;              //TSC服务器端口
+  int tsc_timeout;
+  int tsc_hb_req_ltime;
+  int tsc_hb_rsp_ltime;
+  char tsc_domain[256];      //TSC服务器：域名
+  char tsc_addr[32];         //TSC服务器：IP
+}TSC;
+
+typedef struct _app
+{
+  int app_port;              //APP监听端口
+  int app_timeout;
+  char app_addr[32];         //APP服务器：IP
+}APP;
+
+typedef struct _omc
+{
+  int omc_port;
+  int omc_timeout;
+  char omc_domain[256];
+  char omc_addr[32];
+}OMC;
+
+typedef struct _base
+{
+  N3G n3g;
+  SAT sat;
+  GPS gps;
+  TSC tsc;
+  APP app;
+  OMC omc;
+}BASE;
+
+BASE base = { 0 };
+
+typedef struct _user {
+  char userid[24];           //用户ID
+  time_t update;             //最近活动时间
+  struct sockaddr addr;      //APP的IP和PORT
+  struct _user *next;
+}USER;
+
+USER *gp_users = NULL;
+
+//发送给TSC的GPS数据，非标准格式
+char GpsData[256] = "$GPRMC,140039.000,A,2309.91434,N,11325.5459,E,0.0,2000.0,A*60,00,00,00000000,";
+//发送给TSC的心跳间隔时间
+int tsc_hb_timeout = 300;
+
+/* 初始化串口设备
+ * @fd
+ * @device
+ * @baud_rate
+ */
+int init_serial(int *fd, char *device, int baud_rate)
+{
+  satfi_log("open serial port : %s ...\n", device);
+  int fd_serial = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
+  if (fd_serial < 0)
+  {
+    perror("open fd_serial");
+    return -1;
+  }
+
+  *fd = fd_serial;
+
+  /* 串口主要设置结构体termios <termios.h> */
+  struct termios options;
+
+  /* 1.tcgetattr()用于获取与终端相关的参数
+   *   参数fd为终端的文件描述符，返回的结果保存在termios结构体中
+   */
+  tcgetattr(fd_serial, &options);
+
+  /* 2.修改获得的参数 */
+  options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
+  options.c_cflag &= ~CSIZE;         /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
+  options.c_cflag &= ~CRTSCTS;       /* 无硬件流控 */
+  options.c_cflag |= CS8;            /* 8位数据长度 */
+  options.c_cflag &= ~CSTOPB;        /* 1位停止位 */
+  options.c_iflag |= IGNPAR;         /* 无奇偶校验 */
+  options.c_oflag = 0;               /* 输出模式 */
+  options.c_lflag = 0;               /* 不激活终端模式 */
+  cfsetospeed(&options, baud_rate);    /* 设置波特率 */
+
+  /* 3.设置新属性: TCSANOW，所有改变立即生效 */
+  tcflush(fd_serial, TCIFLUSH);      /* 溢出数据可以接收，但不读 */
+  tcsetattr(fd_serial, TCSANOW, &options);
+
+  satfi_log("open serial port : %s successfully!!!\n", device);
+  return 0;
+}
+
+/* 串口发送数据
+ * @fd:     串口描述符
+ * @data:   待发送数据
+ * @datalen:数据长度
+ */
+int uart_send(int fd, char *data, int datalen)
+{
+  int len = 0;
+  len = write(fd, data, datalen); /* 实际写入的长度 */
+  if (len == datalen)
+  {
+    return len;
+  }
+  else
+  {
+    tcflush(fd, TCOFLUSH); /* TCOFLUSH，刷新写入的数据，但不传送 */
+    return -1;
+  }
+
+  return 0;
+}
+
+/* 串口接收数据 */
+int uart_recv(int fd, char *data, int datalen)
+{
+  int len = 0, ret = 0;
+  fd_set fs_read;
+  struct timeval tv = {1,0};
+
+  FD_ZERO(&fs_read);
+  FD_SET(fd, &fs_read);
+
+  ret = select(fd+1, &fs_read, NULL, NULL, &tv);
+
+  if (ret>0)
+  {
+    if(FD_ISSET(fd, &fs_read))
+    {
+      len = read(fd, data, datalen);
+      return len;
+    }
+  }
+
+  return 0;
+}
+
+int dump(char *buff, int n)
+{
+  #define LINE  32
+  int i,j;
+  for (i=0;i<n/LINE;i++)
+  {
+    for(j=0;j<LINE;j++) { printf("%02x ", (unsigned char)buff[LINE*i+j]); }
+    for(j=0;j<LINE;j++) { printf("%c", isprint(buff[LINE*i+j])?buff[LINE*i+j]:'.'); } printf("\n");
+  }
+
+  for(j=i*LINE;j<n;j++) { printf("%02x ", (unsigned char)buff[j]); }
+  for(j=n;j<LINE*i+LINE;j++) { printf("   "); }
+  for(j=i*LINE;j<n;j++) { printf("%c", isprint(buff[j])?buff[j]:'.'); } printf("\n");
+}
+
+int bTscConnected = 0;
+int sock_app = -1;
+
+#define MAXLINE 1024
+int detect_interface(char *ifname)
+{
+  FILE *fp;
+  char result[MAXLINE],command[MAXLINE];
+  snprintf(command,sizeof(command),"ifconfig %s", ifname);
+  fp=popen(command,"r");
+  if(NULL==fp) return -1;
+  while(fgets(result,sizeof(result),fp)!=NULL)
+  {
+    if('\n' == result[strlen(result)-1])
+      result[strlen(result)-1] = '\0';
+    //satfi_log("%s\n",result);
+  }
+  int rc = pclose(fp);
+  return rc;
+}
+
+int myexec(char *command, char *result, int *maxline)
+{
+  FILE *pp = popen(command, "r");
+  if(NULL == pp) return -1;
+  //satfi_log("execute shell : %s\n", command);
+  char tmp[MAXLINE];
+  if(result!=NULL)
+  {
+    int line=0;
+    while(fgets(tmp,sizeof(tmp),pp)!=NULL)
+    {
+      if('\n' == tmp[strlen(tmp)-1]) tmp[strlen(tmp)-1] = '\0';
+      if(maxline!=NULL && line++<*maxline) strcat(result,tmp);
+      //satfi_log("%s\n", tmp);
+    }
+    *maxline = line;
+  }
+  int rc = pclose(pp);
+  return rc;
+}
+
+/* 解析北斗GPS模块GPS数据
+ *
+ */
+int parseGpsData(char *buf, int len)
+{
+  char data[32][12] = {};
+  char *del = ",";
+  int i = 0;
+  char *p = strtok(buf, del);
+  while(p!=NULL)
+  {
+    strncpy(&data[i++][0], p, 11);
+    p = strtok(NULL, del);
+    if(p) satfi_log("*** %02d : %s\n", i, p);
+  }
+
+  if(data[2][0]!='A')
+  {
+    return 0;
+  }
+  
+  strcpy(GpsData, "$GPRMC,"); // $GNRMC,$GPRMC --> $GPRMC
+  strcat(GpsData, data[1]);   // UTC
+  if(strncmp(data[0],"$GNRMC",6)==0)
+    strcat(GpsData, "0,");      // 补一个0
+  strcat(GpsData, data[2]);   // A
+  strcat(GpsData, ",");
+  strcat(GpsData, data[3]);   // 纬度
+  strcat(GpsData, ",");
+  strcat(GpsData, data[4]);   // 南北半球
+  strcat(GpsData, ",");
+  strcat(GpsData, data[5]);   // 经度
+  strcat(GpsData, ",");
+  strcat(GpsData, data[6]);   // 东西半球
+  strcat(GpsData, ",");
+  strcat(GpsData, data[7]);   // 地面速度
+  strcat(GpsData, ",");
+  strcat(GpsData, "2000");   // 定位精度
+  strcat(GpsData, ",A*60,00,00,00000000,");
+
+  return 0;
+}
+
+/* 检测文件是否存在
+ *
+ */
+int isFileExists(const char *path)
+{
+  return !access(path, F_OK);
+}
+
+/* 同步锁
+ *
+ */
+void n3g_lock() { pthread_mutex_lock(&n3g_mutex); }
+void n3g_unlock() { pthread_mutex_unlock(&n3g_mutex); }
+void sat_lock(char *prefix)
+{
+  pthread_mutex_lock(&sat_mutex);
+  //satfi_log("........SAT LOCKING........%s\n", prefix);
+}
+void sat_unlock()
+{
+  pthread_mutex_unlock(&sat_mutex);
+  //satfi_log("........SAT UNLOCK........\n");
+}
+void net_lock() { pthread_mutex_lock(&net_mutex); }
+void net_unlock() { pthread_mutex_unlock(&net_mutex); }
+void gps_lock() { pthread_mutex_lock(&gps_mutex); }
+void gps_unlock() { pthread_mutex_unlock(&gps_mutex); }
+
+/* 解析SAT模块+GPSUTC
+ *
+ */
+#define MAX_STR_LEN    32
+#define MAX_GPSUTC_IDX 10
+
+typedef enum {
+  GPSUTC_Head_IDX = 0,
+  GPSUTC_ISDST_IDX = 1,
+  GPSUTC_YDAY_IDX = 2,
+  GPSUTC_WDAY_IDX = 3,
+  GPSUTC_YEAR_IDX = 4,
+  GPSUTC_MON_IDX = 5,
+  GPSUTC_MDAY_IDX = 6,
+  GPSUTC_HOUR_IDX = 7,
+  GPSUTC_MIN_IDX = 8,
+  GPSUTC_SEC_IDX = 9,
+}GPSUTC_Field_Name_Idx;
+
+char ucGpsutcFieldName[MAX_GPSUTC_IDX][MAX_STR_LEN] =
+{
+  {"InformationHeader"},
+  {"ISDST"},
+  {"YDAY"},
+  {"WDAY"},
+  {"YEAR"},
+  {"MON"},
+  {"MDAY"},
+  {"HOUR"},
+  {"MIN"},
+  {"SEC"},
+};
+
+char *gps_find_key(char *buf, char key)
+{
+  int i,len=strlen(buf);
+  char *ret = NULL;
+  for(i=0;i<len;i++)
+  {
+    if(buf[i]==key)
+    {
+      ret = &buf[i];
+      break;
+    }
+  }
+  return ret;
+}
+
+int gps_parse(char *buf)
+{
+  int i;
+  char *head;
+  char *field1, *field2;
+
+  satfi_log("parse +GPSUTC ...\n");
+
+  if(strcasestr(buf, "+GPSUTC: "))
+  {
+    field1 = buf;
+
+    for(i=0;i<MAX_GPSUTC_IDX;i++)
+    {
+      if(i==0)
+      {
+        field2 = gps_find_key(field1,':');
+      }
+      else
+      {
+        field2 = gps_find_key(field1,',');
+      }
+
+      if(field2!=NULL)
+      {
+        if(field2==field1)
+        {
+          satfi_log("%8s ---- null\n", ucGpsutcFieldName[i]);
+        }
+        else
+        {
+          *field2 = '\0';
+          satfi_log("%8s ----%s\n", ucGpsutcFieldName[i], field1);
+        }
+        field1 = field2+1;
+      }
+      else
+      {
+        if(field1!=NULL)
+          satfi_log("%8s ----%s\n", ucGpsutcFieldName[i], field1);
+        else
+          satfi_log("%8s ---- null\n", ucGpsutcFieldName[i]);
+      }
+    }
+  }
+
+  satfi_log("parse +GPSUTC .\n");
+}
+
+/* 解析CSQ
+ *
+ */
+int parsecsq(char *buf, int n)
+{
+  char *p = gps_find_key(buf,' ');
+  char *q = gps_find_key(buf,',');
+  if(p && q && q>p)
+  {
+    *q='\0';
+    return atoi(p);
+  }
+  return -1;
+}
+
+/* 解析SAT模块GPS数据
+ *
+ */
+int parsegps(char *buf, int n)
+{
+  int i=0;
+  int rslt = 0;
+  char *p=strtok(buf,"\"");
+  char *q=NULL;
+  char *r=NULL;
+  while(p)
+  {
+    if(q=strstr(p,"$GPRMC"))
+    {
+      sat_lock("parsegps");
+      strcpy(base.sat.sat_gps, q);
+      satfi_log("SAT GPS ::: %s\n", q);
+      sat_unlock();
+
+      break;
+    }
+    p=strtok(NULL,"\"");
+  }
+
+  if(q)
+  {
+    r = strtok(q,",");
+    while(r)
+    {
+      i++;
+      satfi_log("*** ### %d : %s\n", i, r);
+      if(i==3 && r[0]=='A')
+        rslt=1;
+      r=strtok(NULL,",");
+    }
+  }
+
+  if(rslt==1)
+  {
+  }
+
+  return rslt;
+}
+
+int IsAllDigit(char *buf, int n)
+{
+  int i=0;
+  for(i=0;i<n;i++)
+  {
+    if(!isdigit(buf[i])) return 0;
+  }
+  return 1;
+}
+
+int checkroute(char *ifname, char *addr)
+{
+  int rslt = 0;
+  char buf[256]={0};
+  char rbuf[256]={0};
+  int  maxline = 1;
+  if(ifname==NULL||addr==NULL||strlen(ifname)==0||strlen(addr)==0)
+  {
+    rslt = 1;
+  }
+  else
+  {
+    sprintf(buf, "route | grep %s | grep %s", ifname, addr);
+    myexec(buf, rbuf, &maxline);
+    if(strlen(rbuf)==0)
+    {
+     rslt = 1;
+    }
+  }
+
+  return rslt;
+}
+
+/* 打印base内容
+ *
+ */
+void print_base(BASE *base)
+{
+  satfi_log("-------- BASE --------\n");
+  satfi_log("-------- 3 G  --------\n");
+  satfi_log("fd:         %d\n",base->n3g.n3g_fd);
+  satfi_log("available:  %d\n",base->n3g.n3g_available);
+  satfi_log("status:     %d\n",base->n3g.n3g_status);
+  satfi_log("state:      %d\n",base->n3g.n3g_state);
+  satfi_log("hb_seconds: %d\n",base->n3g.n3g_hb_seconds);
+  satfi_log("baud_rate:  %d\n",base->n3g.n3g_baud_rate);
+  satfi_log("csq_value:  %d\n",base->n3g.n3g_csq_value);
+  satfi_log("csq_ltime:  %d\n",base->n3g.n3g_csq_ltime);
+  satfi_log("dialing:    %d\n",base->n3g.n3g_dialing);
+  satfi_log("imei:       %s\n",base->n3g.n3g_imei);
+  satfi_log("imsi:       %s\n",base->n3g.n3g_imsi);
+  satfi_log("dev_name:   %s\n",base->n3g.n3g_dev_name);
+  satfi_log("-------- SAT  --------\n");
+  satfi_log("fd:         %d\n",base->sat.sat_fd);
+  satfi_log("available:  %d\n",base->sat.sat_available);
+  satfi_log("status:     %d\n",base->sat.sat_status);
+  satfi_log("state:      %d\n",base->sat.sat_state);
+  satfi_log("hb_seconds: %d\n",base->sat.sat_hb_seconds);
+  satfi_log("baud_rate:  %d\n",base->sat.sat_baud_rate);
+  satfi_log("csq_value:  %d\n",base->sat.sat_csq_value);
+  satfi_log("csq_ltime:  %d\n",base->sat.sat_csq_ltime);
+  satfi_log("dialing:    %d\n",base->sat.sat_dialing);
+  satfi_log("calling:    %d\n",base->sat.sat_calling);
+  satfi_log("imei:       %s\n",base->sat.sat_imei);
+  satfi_log("imsi:       %s\n",base->sat.sat_imsi);
+  satfi_log("dev_name:   %s\n",base->sat.sat_dev_name);
+  satfi_log("gps:        %s\n",base->sat.sat_gps);
+}
+
+/* 3G模块线程
+ *
+ */
+static void *func_z(void *p)
+{
+  BASE *base = (BASE *)p;
+  int counter = 0;
+  int dialingcount = 0;
+
+  while(1)
+  {
+    n3g_lock();
+    //判断3g module是否上电正常
+    if (!isFileExists(base->n3g.n3g_dev_name))
+    {
+      satfi_log("func_z:%s is not exists,3g module work error\n", base->n3g.n3g_dev_name);
+      n3g_unlock();
+
+      /*
+      net_lock();
+      myexec("power_mode gprs off",NULL,NULL);
+      seconds_sleep(5);
+      myexec("power_mode gprs on",NULL,NULL);
+      seconds_sleep(5);
+      net_unlock();
+      */
+      seconds_sleep(30);
+      continue;
+    }
+
+    if (detect_interface(base->n3g.n3g_ifname) == 0)
+    {
+      satfi_log("func_z:3g module working in Online Data State\n");
+      base->n3g.n3g_status = 1;
+      base->n3g.n3g_dialing = 0;
+      base->n3g.n3g_state = N3G_STATE_IDLE;
+      n3g_unlock();
+      uart_send(base->n3g.n3g_fd, "AT+CSQ\r\n", 8);
+      seconds_sleep(10);
+      continue;
+    }
+
+    if (base->n3g.n3g_dialing)
+    {
+      n3g_unlock();
+      if(++dialingcount>=30)
+      {
+        /*
+        net_lock();
+        myexec("power_mode gprs off", NULL, NULL);
+        seconds_sleep(5);
+        myexec("power_mode gprs on", NULL, NULL);
+        seconds_sleep(5);
+        base->n3g.n3g_status = 0;
+        base->n3g.n3g_state = N3G_STATE_AT;
+        net_unlock();
+        */
+        myexec("ifdown wan", NULL, NULL);
+        continue;
+      }
+      else
+      {
+        n3g_unlock();
+        satfi_log("func_z:n3g module is trying to connect to GPRS\n");
+        seconds_sleep(10);
+      }
+      continue;
+    }
+
+    if(base->n3g.n3g_fd == -1)
+    {
+      satfi_log("func_z:init_serial(%s,%d)\n", base->n3g.n3g_dev_name, base->n3g.n3g_baud_rate);
+      init_serial(&base->n3g.n3g_fd, base->n3g.n3g_dev_name, base->n3g.n3g_baud_rate);
+      if(base->n3g.n3g_fd>=0)
+      {
+        base->n3g.n3g_state = N3G_STATE_AT;
+      }
+      else
+      {
+        n3g_unlock();
+        continue;
+      }
+    }
+
+    satfi_log("func_z:3g module state = %d\n", base->n3g.n3g_state);
+    switch(base->n3g.n3g_state)
+    {
+      case N3G_STATE_AT:
+        //printf("func_z:send AT to module\n");
+        uart_send(base->n3g.n3g_fd, "AT\r\n", 4);
+        base->n3g.n3g_state = N3G_STATE_AT_W;
+        counter=0;
+        break;
+      case N3G_STATE_AT_W:
+        //printf("func_z:send AT to module\n");
+        uart_send(base->n3g.n3g_fd, "AT\r\n", 4);
+        base->n3g.n3g_state = N3G_STATE_AT_W;
+        counter=0;
+        break;
+      case N3G_STATE_IMEI:
+        //printf("func_z:send AT+CGSN to module\n");
+        uart_send(base->n3g.n3g_fd, "AT+CGSN\r\n", 9);
+        base->n3g.n3g_state = N3G_STATE_IMEI_W;
+        counter=0;
+        break;
+      case N3G_STATE_IMSI:
+        //printf("func_z:send AT+CIMI to module\n");
+        uart_send(base->n3g.n3g_fd, "AT+CIMI\r\n", 9);
+        base->n3g.n3g_state = N3G_STATE_IMSI_W;
+        counter=0;
+        break;
+      case N3G_STATE_CSQ:
+        //printf("func_z:send AT+CSQ to module\n");
+        uart_send(base->n3g.n3g_fd, "AT+CSQ\r\n", 8);
+        base->n3g.n3g_state = N3G_STATE_CSQ_W;
+        counter=0;
+        break;
+      case N3G_STATE_DIALING:
+        base->n3g.n3g_state = N3G_STATE_IDLE;
+        base->n3g.n3g_dialing = 1;
+        dialingcount = 0;
+        {
+          char ucbuf[256];
+          sprintf(ucbuf, "ifup %s", base->n3g.n3g_ifname_a);
+          myexec(ucbuf, NULL, NULL);
+        }
+        counter=0;
+        break;
+    }
+
+    if(++counter>=10)
+    {
+      if(base->n3g.n3g_fd>=0)
+      {
+        close(base->n3g.n3g_fd);
+        base->n3g.n3g_fd = -1;
+      }
+      base->n3g.n3g_state = N3G_STATE_IDLE;
+      n3g_unlock();
+
+      /*
+      net_lock();
+      myexec("power_mode gprs off", NULL, NULL);
+      seconds_sleep(5);
+      myexec("power_mode gprs on" , NULL, NULL);
+      seconds_sleep(5);
+      net_unlock();
+      */
+      myexec("ifdown wan", NULL, NULL);
+
+      continue;
+    }
+
+    n3g_unlock();
+    seconds_sleep(2);
+  }
+}
+
+/* 卫星模块线程
+ *
+ */
+static void *func_y(void *p)
+{
+  BASE *base = (BASE*)p;
+  int counter = 0;
+  int dialingcount = 0;
+
+  while(1)
+  {
+    sat_lock("func_y:1");
+
+    //判断sat module是否上电正常
+    if (!isFileExists(base->sat.sat_dev_name))
+    {
+      satfi_log("func_y:%s is not exists,restarting sat module\n", base->sat.sat_dev_name);
+      if(base->sat.sat_fd>=0)
+      {
+        close(base->sat.sat_fd);
+        base->sat.sat_fd = -1;
+      }
+      base->sat.sat_state = SAT_STATE_IDLE;
+      sat_unlock();
+
+      net_lock();
+      satfi_log("func_y:waiting 10 seconds...\n");
+      myexec("power_mode sat_sm2500 reset",NULL,NULL);
+      seconds_sleep(10);
+      net_unlock();
+      continue;
+    }
+
+    if (detect_interface(base->sat.sat_ifname) == 0)
+    {
+      satfi_log("func_y:sat module working in Online Data State\n");
+      base->sat.sat_status = 1;
+      base->sat.sat_dialing = 0;
+      base->sat.sat_calling = 0;
+
+      //if(base->sat.sat_available==0)
+      {
+        if(checkroute(base->sat.sat_ifname,base->tsc.tsc_addr))
+        {
+          if(strlen(base->tsc.tsc_addr)==0)
+          {
+            if(strlen(base->tsc.tsc_domain)>0)
+            {
+              char buf[256];
+              char rbuf[256];
+              int  maxline = 1;
+              char *p;
+              myexec("echo 'nameserver 8.8.8.8' > /etc/resolv.conf", NULL, NULL);
+              sprintf(buf, "getip %s", base->tsc.tsc_domain);
+              myexec(buf, rbuf, &maxline);
+              if(p=strstr(rbuf, "IP="))
+              {
+                strncpy(base->tsc.tsc_addr, p+3,255);
+              }
+            }
+          }
+
+          if(strlen(base->tsc.tsc_addr)>0)
+          {
+            char buf[256];
+            sprintf(buf, "route add %s dev %s", base->tsc.tsc_addr, base->sat.sat_ifname);
+            myexec(buf, NULL, NULL);
+            base->sat.sat_available = 1;
+          }
+        }
+      }
+      sat_unlock();
+      seconds_sleep(10);
+      continue;
+    }
+
+    //没有拨号成功或者没有路由
+    base->sat.sat_available = 0;
+
+    if (base->sat.sat_dialing)
+    {
+      sat_unlock();
+      if(++dialingcount>=30)
+      {
+        satfi_log("func_y:sat module dialing too much time, trying reset ...\n");
+        net_lock();
+        myexec("power_mode sat_sm2500 reset", NULL, NULL);
+        seconds_sleep(10);
+        net_unlock();
+        base->sat.sat_status = 0;
+        base->sat.sat_state = SAT_STATE_AT;
+      }
+      else
+      {
+        satfi_log("func_y:sat module is trying to connect to GmPRS\n");
+        satfi_log("func_y:waiting 10 seconds...\n");
+        seconds_sleep(10);
+      }
+      continue;
+    }
+
+    if(base->sat.sat_fd == -1)
+    {
+      satfi_log("func_y:init_serial(%s,%d)\n", base->sat.sat_dev_name, base->sat.sat_baud_rate);
+      init_serial(&base->sat.sat_fd, base->sat.sat_dev_name, base->sat.sat_baud_rate);
+      if(base->sat.sat_fd>=0)
+      {
+        base->sat.sat_state = 0;
+      }
+      else
+      {
+        sat_unlock();
+        seconds_sleep(1);
+        continue;
+      }
+    }
+
+    satfi_log("func_y:sat module working in Online Command State\n");
+    satfi_log("func_y:sat state = %d\n", base->sat.sat_state);
+    if(base->sat.sat_calling)
+    {
+      sat_unlock();
+      seconds_sleep(10);
+      continue;
+    }
+
+    //printf("func_y: **************** sat_state = %d ****************\n", base->sat.sat_state);
+    //printf("func_y: &&&&&&&&&&&&&&&& sat_fd = %d &&&&&&&&&&&&&&&&\n", base->sat.sat_fd);
+    switch(base->sat.sat_state)
+    {
+      case SAT_STATE_AT:
+        //printf("func_y:send AT to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT\r\n", 4);
+        base->sat.sat_state = SAT_STATE_AT_W;
+        //counter=0;
+        break;
+      case SAT_STATE_AT_W:
+        //printf("func_y:send AT to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT\r\n", 4);
+        base->sat.sat_state = SAT_STATE_AT_W;
+        counter=0;
+        break;
+      case SAT_STATE_IMEI:
+        //printf("func_y:send AT+CGSN to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT+CGSN\r\n", 9);
+        base->sat.sat_state = SAT_STATE_IMEI_W;
+        counter=0;
+        break;
+      case SAT_STATE_IMSI:
+        //printf("func_y:send AT+CIMI to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT+CIMI\r\n", 9);
+        base->sat.sat_state = SAT_STATE_IMSI_W;
+        counter=0;
+        break;
+      case SAT_STATE_GPSTRACK_START:
+        //printf("func_y:send AT+GPSTRACK=1,0,16 to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT+GPSTRACK=1,0,16\r\n",20);
+        base->sat.sat_state = SAT_STATE_GPSTRACK_START_W;
+        counter=0;
+        break;
+      case SAT_STATE_GPSTRACK_STOP:
+        //printf("func_y:send AT+GPSTRACK=0,0,16 to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT+GPSTRACK=0,0,16\r\n", 20);
+        base->sat.sat_state = SAT_STATE_GPSTRACK_STOP_W;
+        counter=0;
+        break;
+      case SAT_STATE_CSQ:
+        //printf("func_y:send AT+CSQ to SAT Module\n");
+        uart_send(base->sat.sat_fd, "AT+CSQ\r\n", 8);
+        base->sat.sat_state = SAT_STATE_CSQ_W;
+        counter=0;
+        break;
+      case SAT_STATE_DIALING:
+        //printf("func_y:SAT Module Trying to connect to GmPRS\n");
+        if(base->sat.sat_fd>=0)
+        {
+          close(base->sat.sat_fd);
+          base->sat.sat_fd = -1;
+        }
+        base->sat.sat_state = SAT_STATE_IDLE;
+        base->sat.sat_dialing = 1;
+        dialingcount = 0;
+        {
+          char ucbuf[256];
+          sprintf(ucbuf, "ifup %s", base->sat.sat_ifname_a);
+          myexec(ucbuf, NULL, NULL);
+        }
+        counter=0;
+        break;
+    }
+
+    if(++counter>=20)
+    {
+      if(base->sat.sat_fd>=0)
+      {
+        close(base->sat.sat_fd);
+        base->sat.sat_fd=-1;
+      }
+      base->sat.sat_state = SAT_STATE_IDLE;
+      sat_unlock();
+
+      net_lock();
+      satfi_log("func_y:sat module work incorrect, trying reset ...\n");
+      myexec("power_mode sat_sm2500 reset", NULL, NULL);
+      seconds_sleep(10);
+      net_unlock();
+
+      counter=0;
+      continue;
+    }
+
+    sat_unlock();
+    seconds_sleep(2);
+  }
+}
+
+/* 3G模块串口接收线程
+ *
+ */
+static void *func_zz(void *p)
+{
+  BASE *base = (BASE *)p;
+  char data[1024];
+  int idx=0;
+  int n,i,ncnt;
+  int flg=0,p1=0,p2=0;
+  while(1)
+  {
+    while( base->n3g.n3g_fd != -1)
+    {
+      fd_set fds;
+      struct timeval tv = {1,0};
+      FD_SET(base->n3g.n3g_fd, &fds);
+      switch(select(base->n3g.n3g_fd+1, &fds, NULL, NULL, &tv))
+      {
+        case -1:break;
+        case  0:break;
+        default:
+          if(FD_ISSET(base->n3g.n3g_fd, &fds))
+          {
+            while(1)
+            {
+              if(idx == 0)
+              {
+                memset(data, 0, 1024);
+                ncnt=0;
+              }
+              n=read(base->n3g.n3g_fd, &data[idx], 1);
+              if(n>0)
+              {
+                if(data[idx] == '\r') data[idx] = '\n';
+                if(data[idx] == '\n') ncnt++;
+                else ncnt = 0;
+                if(ncnt==4){idx=2;ncnt=0;continue;}
+                idx++;
+                if(idx==1 && data[0]!='\n'){idx=0;ncnt=0;continue;}
+                else if(idx==2 && data[1]!='\n'){idx=0;ncnt=0;continue;}
+                else if(idx==3 && data[2]=='\n'){idx=2;ncnt=2;continue;}
+                else if(idx>4)
+                {
+                  if(strstr(data, "+CGSN"))
+                  {
+                    if(data[idx-1] == '\"')
+                    {
+                      flg++;
+                      if(flg==1) p1=idx;
+                      else if(flg==2) p2=idx-1;
+                    }
+                    if(data[idx-1]=='\n' && data[idx-2]=='\n')
+                    {
+                      n3g_lock();
+                      if(p2>p1 && p2-p1==15)
+                      {
+                        strncpy(base->n3g.n3g_imei,&data[p1],IMSI_LEN);
+                        satfi_log("func_zz:3G IMEI : %s\n", base->n3g.n3g_imei);
+                        if(base->n3g.n3g_state == N3G_STATE_IMEI_W)
+                        {
+                          base->n3g.n3g_state = N3G_STATE_IMSI;
+                        }
+                      }
+                      n3g_unlock();
+                      idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                    }
+                   
+                  }
+                  else if(strstr(data, "+CSQ") && data[idx-1]=='\n' && data[idx-2]=='\n')
+                  {
+                    n3g_lock();
+                    base->n3g.n3g_csq_value = parsecsq(data,idx);
+                    base->n3g.n3g_csq_ltime = time(0);
+                    printf("func_zz:n3g.n3g_csq_value = %d\n", base->n3g.n3g_csq_value);
+                    if(base->n3g.n3g_csq_value>=18)
+                    {
+                      if(base->n3g.n3g_state == N3G_STATE_CSQ_W)
+                      {
+                        base->n3g.n3g_state = N3G_STATE_DIALING;
+                      }
+                    }
+                    else
+                    {
+                      if(base->n3g.n3g_state == N3G_STATE_CSQ_W)
+                      {
+                        base->n3g.n3g_state = N3G_STATE_CSQ;
+                      }
+                    }
+                    n3g_unlock();
+                    idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                  }
+                  else if(strstr(data, "\n\nOK\n\n"))
+                  {
+                    n3g_lock();
+                    if(base->n3g.n3g_state==N3G_STATE_AT_W)
+                    {
+                      if(strlen(base->n3g.n3g_imei)==0)
+                      {
+                        base->n3g.n3g_state = N3G_STATE_IMEI;
+                      }
+                      else if(strlen(base->n3g.n3g_imsi)==0)
+                      {
+                        base->n3g.n3g_state = N3G_STATE_IMSI;
+                      }
+                      else
+                      {
+                        base->n3g.n3g_state = N3G_STATE_CSQ;
+                      }
+                    }
+                    n3g_unlock();
+                    idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                  }
+                  else if(strstr(data, "\n\nERROR\n\n"))
+                  {
+                    idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                  }
+                  else if(strstr(data,"\n\nNO CARRIER\n\n"))
+                  {
+                    idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                  }
+                  else if(data[idx-1]=='\n' && data[idx-2]=='\n')
+                  {
+                    if(strstr(data, "\n\n+"))
+                    {
+                      data[idx-2] = '\0';
+                      satfi_log("func_zz: **>>**>> %s\n", &data[2]);
+                    }
+                    else if(idx==19 && IsAllDigit(&data[2], 15))
+                    {
+                      n3g_lock();
+                      if(base->n3g.n3g_state == N3G_STATE_IMSI_W)
+                      {
+                        strncpy(base->n3g.n3g_imsi, &data[2], 15);
+                        base->n3g.n3g_state = N3G_STATE_CSQ;
+                        satfi_log("func_zz:3G IMSI : %s\n", base->n3g.n3g_imsi);
+                      }
+                      n3g_unlock();
+                    }
+                    idx=0;ncnt=0;flg=0;p1=0;p2=0;
+                  }
+                }
+              }
+              else
+              {
+                break;
+              }
+            }
+          }
+          break;
+      }
+    }
+    seconds_sleep(2);
+  }
+}
+
+/* 卫星模块串口接收线程
+ *
+ */
+static void *func_x(void *p)
+{
+#if 1
+  BASE *base = (BASE*)p;
+  char data[1024]={0};
+  int  idx=0;
+  int  n,i,flg=0,ncnt=0;
+  while(1)
+  {
+    while(base->sat.sat_status==0 && base->sat.sat_fd != -1)
+    {
+      fd_set fds;
+      struct timeval tv = {1,0};
+      FD_SET(base->sat.sat_fd,&fds);
+      switch(select(base->sat.sat_fd+1, &fds, NULL, NULL, &tv))
+      {
+        case -1:break;
+        case  0:break;
+        default:
+          if (FD_ISSET(base->sat.sat_fd, &fds))
+          {
+            while(1)
+            {
+              if(idx==0)
+              {
+                memset(data,0,1024);
+                flg=0;
+                ncnt=0;
+              }
+              n = read(base->sat.sat_fd, &data[idx], 1);
+              
+              if(n>0)
+              {
+                if(data[idx]=='\r') data[idx]='\n';
+
+                if(data[idx]=='\n') ncnt++;
+                else ncnt = 0;
+
+                if(ncnt==4)
+                {
+                  idx=2;
+                  flg=0;
+                  ncnt=0;
+                  continue;
+                }
+
+                idx++;
+
+                if(idx==1 && data[0] != '\n')
+                {
+                  idx = 0;
+                  continue;
+                }
+                else if(idx==2 && data[1] != '\n')
+                {
+                  idx = 0;
+                  continue;
+                }
+                else if(idx==3 && data[2] == '\n')
+                {
+                  idx = 2;
+                  continue;
+                }
+                else if(idx>4)
+                {
+                  if(strstr(data,"+GPSUTC"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      gps_parse(data);
+                      idx = 0;
+                      flg = 0;
+                      ncnt = 0;
+                    }
+                  }
+                  else if(strstr(data,"+GPSTRACKD"))
+                  {
+                    if(data[idx-1] == '\"')
+                    {
+                      flg++;
+                    }
+                    else if(data[idx-2]=='\n' && data[idx-1] == '\n' && flg==2)
+                    {
+                      if(parsegps(data, idx))
+                      {          
+                        sat_lock("func_x:1");
+                        if(base->sat.sat_state==SAT_STATE_GPSTRACK_START_W)
+                        {
+                          base->sat.sat_state = SAT_STATE_GPSTRACK_STOP;
+                        }
+                        sat_unlock();
+                      }
+                      idx = 0;
+                      flg = 0;
+                      ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"+GPSTRACKS"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      sat_lock("func_x:2");
+                      if(base->sat.sat_state==SAT_STATE_GPSTRACK_STOP_W)
+                      {
+                        base->sat.sat_state = SAT_STATE_CSQ;
+                      }
+                      sat_unlock();
+                      idx=0;flg=0;ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"+CSQ"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      sat_lock("func_x:3");
+                      base->sat.sat_csq_value = parsecsq(data, idx);
+                      base->sat.sat_csq_ltime = time(0);
+                      satfi_log("func_x:sat.sat_csq_value = %d\n", base->sat.sat_csq_value);
+                      if(base->sat.sat_csq_value>=37)
+                      {
+                        if(base->sat.sat_state==SAT_STATE_CSQ_W)
+                        {
+                          base->sat.sat_state = SAT_STATE_DIALING;
+                        }
+                      }
+                      else
+                      {
+                        if(base->sat.sat_state==SAT_STATE_CSQ_W)
+                        {
+                          base->sat.sat_state = SAT_STATE_CSQ;
+                        }
+                      }
+                      sat_unlock();
+                      idx=0;flg=0;ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"+CINFO"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      idx=0;ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"+RCIPH"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      idx=0;ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"+CME ERROR"))
+                  {
+                    if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                    {
+                      idx=0;ncnt=0;
+                    }
+                  }
+                  else if(strstr(data,"\n\nOK\n\n"))
+                  {
+                    sat_lock("func_x:4");
+                    if(base->sat.sat_state==SAT_STATE_AT_W)
+                    {
+                      if(strlen(base->sat.sat_imei)==0)
+                      {
+                        base->sat.sat_state = SAT_STATE_IMEI;
+                      }
+                      else if(strlen(base->sat.sat_imsi)==0)
+                      {
+                        base->sat.sat_state = SAT_STATE_IMSI;
+                      }
+                      else
+                      {
+                        base->sat.sat_state = SAT_STATE_GPSTRACK_START;
+                      }
+                    }
+                    sat_unlock();
+                    idx=0;ncnt=0;
+                  }
+                  else if(strstr(data,"\n\nERROR\n\n"))
+                  {
+                    idx=0;ncnt=0;
+                  }
+                  else if(strstr(data,"\n\nNO CARRIER\n\n"))
+                  {
+                    idx=0;ncnt=0;
+                  }
+                  else if(data[idx-2]=='\n' && data[idx-1]=='\n')
+                  {
+                    if(strstr(data, "\n\n+"))
+                    {
+                      //过滤其他指令
+                      data[idx-2] = '\0';
+                      satfi_log("func_x: **>>**>> %s\n", &data[2]);
+                    }
+                    else if(idx==19 && IsAllDigit(&data[2],15)) //检查是否15位数字
+                    {
+                      sat_lock("func_x:5");
+                      if(base->sat.sat_state == SAT_STATE_IMEI_W)
+                      {
+                        base->sat.sat_state = SAT_STATE_IMSI;
+                        strncpy(base->sat.sat_imei, &data[2], 15);
+                        satfi_log("func_x:SAT_IMEI : %s\n", base->sat.sat_imei);
+                      }
+                      else if(base->sat.sat_state == SAT_STATE_IMSI_W)
+                      {
+                        base->sat.sat_state = SAT_STATE_GPSTRACK_START;
+                        strncpy(base->sat.sat_imsi, &data[2], 15);
+                        satfi_log("func_x:SAT_IMSI : %s\n", base->sat.sat_imsi);
+                      }
+                      sat_unlock();
+                    }
+                    idx=0;ncnt=0;
+                  }
+                }
+              }
+              else
+              {
+                break;
+              }
+            }
+          }
+          break;
+      }
+    }
+    milliseconds_sleep(50);
+  }
+#endif
+}
+
+/* TSC心跳线程
+ *
+ */
+static void *func_d(void *p)
+{
+  BASE *base = (BASE*)p;
+  struct sockaddr_in addr;
+  bzero(&addr, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port   = htons(base->tsc.tsc_port);
+  addr.sin_addr.s_addr = inet_addr(base->tsc.tsc_addr);
+
+  char buf[1024];
+
+  while(1)
+  {
+    sat_lock("func_d:1");
+    if(base->sat.sat_status == 0 || base->sat.sat_available == 0)
+    {
+      //satfi_log("func_d:no available network!!!\n");
+      bTscConnected = 0;
+      sat_unlock();
+      seconds_sleep(2);
+      continue;
+    }
+
+    if(sock_app < 0)
+    {
+      //satfi_log("func_d:create socket first!!!\n");
+      if((sock_app = socket(AF_INET, SOCK_DGRAM, 0))==-1)
+      {
+        sat_unlock();
+        seconds_sleep(2);
+        continue;
+      }
+      else
+      {
+        struct sockaddr_in addr;
+        bzero(&addr, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(base->app.app_port);
+        addr.sin_port = INADDR_ANY;
+
+        if(bind(sock_app, (struct sockaddr *)&addr, sizeof(addr))<0)
+        {
+          sat_unlock();
+          seconds_sleep(1);
+          continue;
+        }
+      }
+    }
+
+    time_t now = time(0);
+
+    if(!bTscConnected)
+    {
+      MsgHeader *p = (MsgHeader *)buf;
+      p->length = 19;
+      p->mclass = 0;
+      strncpy(&buf[4], base->sat.sat_imsi, IMSI_LEN);
+      sat_unlock();
+
+      satfi_log("Send Connect Message to TSC Server\n");
+      int n = sendto(sock_app,buf,p->length,0,(struct sockaddr *)&addr, sizeof(addr));
+
+      if (n<0)
+      {
+        satfi_log("sendto return error: errno=%d %s\n", errno, strerror(errno));
+      }
+      seconds_sleep(10);
+      continue;
+    }
+    else
+    {
+      char users[512]={0};
+      MsgHeader *p = (MsgHeader *)buf;
+      int offset = 4;
+      p->mclass = 0x0001;
+      strncpy(&buf[offset], base->sat.sat_imsi, IMSI_LEN);
+      offset += IMSI_LEN;
+
+      *(unsigned short *)&buf[offset] = strlen(GpsData);
+      offset += 2;
+
+      strcpy(&buf[offset], GpsData);
+      offset += strlen(GpsData);
+
+      int iCntUser = 0;
+      USER *pUser = gp_users;
+      USER *q = pUser;
+      while(pUser)
+      {
+        if(now - pUser->update < base->tsc.tsc_timeout)
+        {
+          strncpy(&users[iCntUser * USERID_LEN], &pUser->userid[USERID_LLEN - USERID_LEN], USERID_LEN); 
+          iCntUser ++;
+          q = pUser;
+          pUser = pUser->next;
+        }
+        else
+        {
+          //remove user
+          if(pUser == gp_users)
+          {
+            gp_users = pUser->next;
+            free(pUser);
+            pUser = gp_users;
+            q = pUser;
+          }
+          else
+          {
+            q->next = pUser->next;
+            free(pUser);
+            pUser = q->next;
+          }
+        }
+      }
+      *(unsigned short *)&buf[offset] = iCntUser;
+      offset += 2;
+
+      strncpy(&buf[offset], users, iCntUser * USERID_LEN);
+      offset += iCntUser * USERID_LEN;
+
+      p->length = offset;
+
+      satfi_log("Send HeartBeat Message to TSC Server\n");
+      int n = sendto(sock_app,buf,p->length,0,(struct sockaddr *)&addr, sizeof(addr));
+
+      if (n<=0)
+      {
+        satfi_log("sendto return error: errno=%d %s\n", errno, strerror(errno));
+      }
+      else
+      {
+        base->tsc.tsc_hb_req_ltime = now;
+      }
+
+      sat_unlock();
+    } 
+
+    seconds_sleep(base->tsc.tsc_timeout);
+  }
+}
+
+/* 初始化
+ *
+ */
+void init()
+{
+
+  base.sat.sat_fd = -1;
+  base.sat.sat_status = 0;
+  base.sat.sat_state = -1;
+  base.sat.sat_calling = 0;
+  base.sat.sat_dialing = 0;
+
+  base.n3g.n3g_fd = -1;
+  base.n3g.n3g_status = 0;
+  base.n3g.n3g_state = -1;
+  base.n3g.n3g_dialing = 0;
+
+  char ucTmp[256];
+  GetIniKeyString("server","TSCDOMAIN","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.tsc.tsc_domain, ucTmp);
+    satfi_log("TSC_DOMAIN:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("server","TSCADDR","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.tsc.tsc_addr, ucTmp);
+    satfi_log("TSC_ADDR:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("server","APPADDR","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.app.app_addr, ucTmp);
+    satfi_log("APP_ADDR:%s\n", ucTmp);
+  }
+  
+  base.tsc.tsc_port = GetIniKeyInt("server","TSCPORT","/etc/config.ini");
+  satfi_log("TSC_PORT:%d\n", base.tsc.tsc_port);
+  base.app.app_port = GetIniKeyInt("server","APPPORT","/etc/config.ini");
+  satfi_log("APP_PORT:%d\n", base.app.app_port);
+  base.tsc.tsc_timeout = GetIniKeyInt("server","TSCTIMEOUT","/etc/config.ini");
+  satfi_log("TSC_TIMEOUT:%d\n", base.tsc.tsc_timeout);
+  base.app.app_timeout = GetIniKeyInt("server","APPTIMEOUT","/etc/config.ini");
+  satfi_log("APP_TIMEOUT:%d\n", base.app.app_timeout);
+
+  GetIniKeyString("omc","OMCDOMAIN","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.omc.omc_domain, ucTmp);
+    satfi_log("OMC_DOMAIN:%s\n", ucTmp);
+  }
+  
+  GetIniKeyString("omc","OMCADDR","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.omc.omc_addr, ucTmp);
+    satfi_log("OMC_ADDR:%s\n", ucTmp);
+  }
+  
+  base.omc.omc_port = GetIniKeyInt("omc","OMCPORT","/etc/config.ini");
+  satfi_log("OMC_PORT:%d\n", base.omc.omc_port);
+  base.omc.omc_timeout = GetIniKeyInt("omc","OMCTIMEOUT","/etc/config.ini");
+  satfi_log("OMC_TIMEOUT:%d\n", base.omc.omc_timeout);
+
+  GetIniKeyString("satellite","IFNAME","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.sat.sat_ifname, ucTmp);
+    satfi_log("SAT_IFNAME:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("satellite","IFNAMEA","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.sat.sat_ifname_a, ucTmp);
+    satfi_log("SAT_IFNAMEA:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("satellite","DEVNAME","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.sat.sat_dev_name, ucTmp);
+    satfi_log("SAT_DEV_NAME:%s\n", ucTmp);
+  }
+
+  base.sat.sat_baud_rate = GetIniKeyInt("satellite","BAUDRATE","/etc/config.ini");
+  satfi_log("SAT_BAUD_RATE:%d\n", base.sat.sat_baud_rate);
+
+  GetIniKeyString("gprs","IFNAME","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.n3g.n3g_ifname, ucTmp);
+    satfi_log("GPRS_IFNAME:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("gprs","IFNAMEA","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.n3g.n3g_ifname_a, ucTmp);
+    satfi_log("GPRS_IFNAMEA:%s\n", ucTmp);
+  }
+
+  GetIniKeyString("gprs","DEVNAME","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.n3g.n3g_dev_name, ucTmp);
+    satfi_log("GPRS_DEV_NAME:%s\n", ucTmp);
+  }
+
+  base.n3g.n3g_baud_rate = GetIniKeyInt("gprs","BAUDRATE","/etc/config.ini");
+  satfi_log("GPRS_BAUD_RATE:%d\n", base.n3g.n3g_baud_rate);
+
+  GetIniKeyString("gps","DEVNAME","/etc/config.ini",ucTmp);
+  if(strlen(ucTmp)!=0)
+  {
+    strcpy(base.gps.gps_dev_name, ucTmp);
+    satfi_log("GPS_DEV_NAME:%s\n", ucTmp);
+  }
+  base.gps.gps_baud_rate = GetIniKeyInt("gps","BAUDRATE","/etc/config.ini");
+  satfi_log("GPS_BAUD_RATE:%d\n", base.gps.gps_baud_rate);
+}
+
+/* 3G模块工作状态
+ *
+ */
+short get_n3g_status()
+{
+  short status = 0;
+  n3g_lock();
+  if(strlen(base.n3g.n3g_imei)==0) status = 2;       //没有读到IMEI
+  else if(strlen(base.n3g.n3g_imsi)==0) status = 3;  //没有读到IMSI
+  else if(base.n3g.n3g_dialing == 1) status = 1;     //正在拨号
+  else if(base.n3g.n3g_state == N3G_STATE_CSQ ||
+          base.n3g.n3g_state == N3G_STATE_CSQ_W)
+  {
+    status = 4; //信号强度不够
+  }
+  else if(base.n3g.n3g_state == -1) status = 2;
+  n3g_unlock();
+  return status;
+}
+
+/* 卫星模块工作状态
+ *
+ */
+short get_sat_status()
+{
+  short status = 0;
+  sat_lock("get_sat_status:1");
+  if(base.sat.sat_status == 1) status = 0;
+  else if(strlen(base.sat.sat_imei)==0) status = 2;       //没有读到IMEI
+  else if(strlen(base.sat.sat_imsi)==0) status = 3;  //没有读到IMSI
+  else if(base.sat.sat_calling == 1) status = 6;     //正在进行电路域的呼叫
+  else if(base.sat.sat_dialing == 1) status = 1;     //正在拨号
+  //else if(base.sat.sat_status == 0) status = 1;      //没有拨号，暂时设置状态：正在拨号中
+  else if(base.sat.sat_state == SAT_STATE_GPSTRACK_START ||
+          base.sat.sat_state == SAT_STATE_GPSTRACK_START_W ||
+          base.sat.sat_state == SAT_STATE_GPSTRACK_STOP ||
+          base.sat.sat_state == SAT_STATE_GPSTRACK_STOP_W)
+  {
+    status = 5; //等待GPS数据
+  }
+  else if(base.sat.sat_state == SAT_STATE_CSQ ||
+          base.sat.sat_state == SAT_STATE_CSQ_W)
+  {
+    status = 4; //信号强度不够
+  }
+  sat_unlock();
+  return status;
+}
+
+/* 构造字符串格式的CSQ
+ *
+ */
+char *make_csq(char *buf, time_t *timep, int csqval)
+{
+  if(*(int *)timep == 0)
+  {
+    buf[0] = 0;
+  }
+  else
+  {
+    struct tm *tmp = localtime(timep);
+    sprintf(buf, "%04d-%02d-%02d %02d:%02d:%02d %d",
+            tmp->tm_year+1900,tmp->tm_mon+1,tmp->tm_mday,
+            tmp->tm_hour,tmp->tm_min,tmp->tm_sec,
+            csqval);
+  }
+  return buf;
+}
+
+int main()
+{
+  init();
+  char ucbuf[256];
+
+  if(detect_interface(base.n3g.n3g_ifname)!=0)
+  {
+    if (!isFileExists(base.n3g.n3g_dev_name))
+    {
+      myexec("power_mode gprs on", NULL, NULL);
+      seconds_sleep(5);
+    }
+  }
+  else
+  {
+    sprintf(ucbuf, "ifdown %s", base.n3g.n3g_ifname_a);
+    myexec(ucbuf, NULL, NULL);
+    seconds_sleep(5);
+  }
+  if(detect_interface(base.sat.sat_ifname)!=0)
+  {
+    if (!isFileExists(base.sat.sat_dev_name))
+    {
+      myexec("power_mode sat_sm2500 on", NULL, NULL);
+      seconds_sleep(5);
+    }
+  }
+  else
+  {
+    sprintf(ucbuf, "ifdown %s", base.sat.sat_ifname_a);
+    myexec(ucbuf, NULL, NULL);
+    seconds_sleep(5);
+  }
+
+  pthread_t thread_d,thread_x,thread_y,thread_z,thread_zz;
+  pthread_create(&thread_d,NULL,func_d,(void *)&base);
+  pthread_create(&thread_x,NULL,func_x,(void *)&base);
+  pthread_create(&thread_y,NULL,func_y,(void *)&base);
+  pthread_create(&thread_z,NULL,func_z,(void *)&base);
+  pthread_create(&thread_zz,NULL,func_zz,(void *)&base);
+
+  struct sockaddr_in appserver;
+
+  struct timeval tv = {3,0};
+  fd_set fds;
+
+  int fd_serial;
+  char buf[2048];
+  char gpsbuf[1024];
+  int idx =0;
+
+  int n = 0;
+
+  bzero(&appserver, sizeof(appserver));
+  appserver.sin_family      = AF_INET;
+  appserver.sin_port        = htons(base.app.app_port);
+  appserver.sin_addr.s_addr = INADDR_ANY;
+
+  //1.create socket
+  satfi_log("++ ++ create sock_app\n");
+  if((sock_app = socket(AF_INET, SOCK_DGRAM, 0))<0)
+  {
+    perror("socket : sock_app");
+    exit(1);
+  }
+
+  //2.bind
+  satfi_log("++ ++ bind sock_app\n");
+  if(bind(sock_app, (struct sockaddr*)&appserver, sizeof(appserver))<0)
+  {
+    perror("bind : sock_app");
+    exit(1);
+  }
+
+  struct sockaddr_in cliAppAddr;
+  int len = sizeof(cliAppAddr);
+  int maxfd = 0;
+  MsgHeader       *p             = (MsgHeader *)      buf;
+
+  // GPS数据接收
+  satfi_log("++ ++ init gps serial\n");
+  int fd_gps;
+  init_serial(&fd_gps, base.gps.gps_dev_name, base.gps.gps_baud_rate);
+
+  while(1)
+  {
+    usleep(20);
+    FD_ZERO(&fds);/* 每次循环都需要清空 */
+    FD_SET(sock_app, &fds); /* 添加描述符 */
+    maxfd = sock_app;
+    FD_SET(fd_gps, &fds);
+    if(fd_gps>maxfd) maxfd=fd_gps;
+
+    switch(select(maxfd+1,&fds,NULL,NULL,&tv))
+    {
+    case -1: break;
+    case  0: break;
+    default:
+      if(FD_ISSET(fd_gps, &fds))
+      {
+        n = read(fd_gps, buf, 1024);
+
+        if(n>0)
+        {
+          if(idx+n<1024)
+          {
+            memcpy(&gpsbuf[idx], buf, n);
+            idx += n;
+
+            while(idx>0)
+            {
+              int k=0;
+              while(k<idx && gpsbuf[k]!='$') k++;
+              if(k>=idx)
+              {
+                idx=0;
+                break;
+              }
+              
+              int kk=k+1;
+              while(kk<idx && kk+1<idx)
+              {
+                if(gpsbuf[kk]==0xa && gpsbuf[kk+1] == 0xa)
+                {
+                  if((strncmp(&gpsbuf[k],"$GPRMC",6)==0) || (strncmp(&gpsbuf[k],"$GNRMC",6)==0))
+                  {
+                    gpsbuf[kk]='\0';
+                    gps_lock();
+                    strncpy(base.gps.gps_bd, &gpsbuf[k], kk-k);
+                    gps_unlock();
+                    parseGpsData(&gpsbuf[k],kk-k);
+                  }
+                  kk+=2;
+                  int kkk;
+                  for(kkk=kk;kkk<idx;kkk++)
+                  {
+                    gpsbuf[kkk-kk] = gpsbuf[kkk];
+                  }
+                  idx -= kk;
+                  kk = -1;
+                  break;
+                }
+                else
+                {
+                  kk++;
+                }
+              }
+              if(kk>=idx-1)
+              {
+                int kkk;
+                for(kkk=k;kkk<idx;kkk++)
+                {
+                  gpsbuf[kkk-k] = gpsbuf[kkk];
+                }
+                idx -= k;
+                break;
+              }
+            }
+          }
+          else
+          {
+            satfi_log("GPS data is too long to read\n");
+          }
+        }
+      }
+      else if(FD_ISSET(sock_app, &fds))
+      {
+        n = recvfrom(sock_app, buf, 2048, 0, (struct sockaddr *)&cliAppAddr, &len);
+        
+        if (n>0 && n == p->length)
+        {
+          buf[n] = 0;
+          switch(p->mclass)
+          {
+          case 0x0:
+            satfi_log("APP CONNECT REQUEST\n");
+            //save userid
+            if(gp_users==NULL)
+            {
+              gp_users = (USER *)malloc(sizeof(USER));
+              if(gp_users)
+              {
+                strncpy(gp_users->userid, &buf[4], USERID_LLEN);
+                memcpy(&gp_users->addr, &cliAppAddr, sizeof(cliAppAddr));
+                gp_users->update = (unsigned int)time(0);
+                gp_users->next = NULL;
+              }
+              else
+              {
+                break;
+              }
+            }
+            else
+            {
+              USER *pUser = gp_users;
+              while(pUser)
+              {
+                if(strncmp(pUser->userid, &buf[4], USERID_LLEN)==0)
+                {
+                  pUser->update = (unsigned int)time(0);
+                  memcpy(&pUser->addr, &cliAppAddr, sizeof(cliAppAddr));
+                  break;
+                }
+                pUser = pUser->next;
+              }
+              if(pUser==NULL)
+              {
+                pUser = (USER *)malloc(sizeof(USER));
+                if(pUser)
+                {
+                  strncpy(pUser->userid, &buf[4], USERID_LLEN);
+                  memcpy(&pUser->addr, &cliAppAddr, sizeof(cliAppAddr));
+                  pUser->update = (unsigned int)time(0);
+                  pUser->next = gp_users;
+                  gp_users = pUser;
+                }
+              }
+            }
+            //response
+            {
+              memset(buf,0,2048);
+              MsgAppConnectRsp *rsp = (MsgAppConnectRsp *)buf;
+              rsp->length = sizeof(MsgAppConnectRsp);
+              rsp->mclass = 0x8000;
+              rsp->result = 0;
+              rsp->n3g_status = get_n3g_status();
+              rsp->sat_status = get_sat_status();
+              n3g_lock();
+              strncpy(rsp->n3g_imei, base.n3g.n3g_imei, IMSI_LEN);
+              strncpy(rsp->n3g_imsi, base.n3g.n3g_imsi, IMSI_LEN);
+              n3g_unlock();
+              sat_lock("main:1");
+              strncpy(rsp->sat_imei, base.sat.sat_imei, IMSI_LEN);
+              strncpy(rsp->sat_imsi, base.sat.sat_imsi, IMSI_LEN);
+              sat_unlock();
+
+              n = sendto(sock_app, buf, p->length, 0, (struct sockaddr*)&cliAppAddr, sizeof(cliAppAddr));
+              if(n<0) satfi_log("sendto return error: errno=%d (%s)\n", errno, strerror(errno));
+            }
+            break;
+          case 0x1:
+            satfi_log("APP HEART BEAT REQUEST\n");
+            //update user
+            USER *pUser = gp_users;
+            while(pUser)
+            {
+              if(strncmp(pUser->userid, &buf[8], USERID_LLEN)==0)
+              {
+                pUser->update = (unsigned int)time(0);
+                memcpy(&pUser->addr, &cliAppAddr, sizeof(cliAppAddr));
+                break;
+              }
+              pUser = pUser->next;
+            }
+
+            if(pUser==NULL)
+            {
+              satfi_log("APP need CONNECT first !!!\n");
+              pUser = (USER *)malloc(sizeof(USER));
+              if(pUser)
+              {
+                strncpy(pUser->userid, &buf[8], USERID_LLEN);
+                memcpy(&pUser->addr, &cliAppAddr, sizeof(cliAppAddr));
+                pUser->update = (unsigned int)time(0);
+                pUser->next = gp_users;
+                gp_users = pUser;
+              }
+            }
+
+            //response
+            {
+              memset(buf, 0, 2048);
+              MsgAppHeartbeatRsp *rsp = (MsgAppHeartbeatRsp *)buf;
+              rsp->length = sizeof(MsgAppHeartbeatRsp);
+              rsp->mclass = 0x8001;
+              rsp->result = 0;
+              rsp->n3g_status = get_n3g_status();
+              n3g_lock();
+              strncpy(rsp->n3g_imei, base.n3g.n3g_imei, IMSI_LEN);
+              strncpy(rsp->n3g_imsi, base.n3g.n3g_imsi, IMSI_LEN);
+              make_csq(rsp->n3g_csq,(time_t *)&base.n3g.n3g_csq_ltime, base.n3g.n3g_csq_value);
+              n3g_unlock();
+              rsp->sat_status = get_sat_status();
+              sat_lock("main:2");
+              strncpy(rsp->sat_imei, base.sat.sat_imei, IMSI_LEN);
+              strncpy(rsp->sat_imsi, base.sat.sat_imsi, IMSI_LEN);
+              make_csq(rsp->sat_csq,(time_t *)&base.sat.sat_csq_ltime, base.sat.sat_csq_value);
+              strncpy(rsp->sat_gps, base.sat.sat_gps, 127);
+              sat_unlock();
+              gps_lock();
+              strncpy(rsp->bd_gps, base.gps.gps_bd, 127);
+              gps_unlock();
+
+              n = sendto(sock_app, buf, rsp->length, 0, (struct sockaddr*)&cliAppAddr, sizeof(cliAppAddr));
+              if(n<0) satfi_log("sendto return error: errno=%d (%s)\n", errno, strerror(errno));
+            }
+            break;
+
+          case 0x2:
+            satfi_log("recv APP SendAppOperation REQUEST\n");
+            {
+              p->length = 8;
+              p->mclass = 0x8002;
+              *(int*)&buf[4] = 0;
+
+              n = sendto(sock_app, buf, p->length, 0, (struct sockaddr*)&cliAppAddr, sizeof(cliAppAddr));
+              if(n<0) satfi_log("sendto return error: errno=%d (%s)\n", errno, strerror(errno));
+            }
+            break;
+
+          case 0x3:
+            {
+              satfi_log( "recv APP Lan Message REQUEST\n");
+
+              USER *pUser = gp_users;
+
+              while(pUser)
+              {
+                satfi_log("send lan message to %s:%d\n", inet_ntoa((*(struct sockaddr_in *)&(pUser->addr)).sin_addr), ntohs(((struct sockaddr_in *)pUser)->sin_port));
+                n = sendto(sock_app, buf, n, 0, (struct sockaddr*)&pUser->addr, sizeof(cliAppAddr));
+                if(n<0) satfi_log("sendto return error: errno=%d (%s)\n", errno, strerror(errno));
+                pUser = pUser->next;
+              }
+
+              p->length = 8;
+              p->mclass = 0x8003;
+              *(int *)&buf[4] = 0;
+
+              satfi_log("send lan message rsp to %s:%d\n", inet_ntoa(cliAppAddr.sin_addr), ntohs(cliAppAddr.sin_port));
+              n = sendto(sock_app, buf, 8, 0, (struct sockaddr *)&cliAppAddr, sizeof(cliAppAddr));
+              if(n<0) satfi_log("sendto return error: errno=%d (%s)\n", errno, strerror(errno));
+            }
+            break;
+
+          case 0x8000:
+            satfi_log(" from tsc connect rsp\n");
+            bTscConnected = 1;
+            break;
+          case 0x8001:
+            satfi_log(" from tsc heartbeat rsp\n");
+            base.tsc.tsc_hb_rsp_ltime = time(0);
+            break;
+          case 0x8003:
+            break;
+          default:
+            satfi_log("received unrecognized message : %d\n", p->mclass);
+            break;
+          }
+        }
+        else
+        {
+          satfi_log("recv %d bytes,length=%d\n", n, p->length);
+        }
+      }
+      break;
+    }
+  }
+  return 0;
+}
+

@@ -1,0 +1,83 @@
+K 25
+svn:wc:ra_dav:version-url
+V 25
+/svn/satfi/!svn/ver/9/src
+END
+timer.c
+K 25
+svn:wc:ra_dav:version-url
+V 33
+/svn/satfi/!svn/ver/3/src/timer.c
+END
+log.c
+K 25
+svn:wc:ra_dav:version-url
+V 31
+/svn/satfi/!svn/ver/3/src/log.c
+END
+config.ini
+K 25
+svn:wc:ra_dav:version-url
+V 36
+/svn/satfi/!svn/ver/8/src/config.ini
+END
+config.c
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/svn/satfi/!svn/ver/3/src/config.c
+END
+timer.h
+K 25
+svn:wc:ra_dav:version-url
+V 33
+/svn/satfi/!svn/ver/3/src/timer.h
+END
+log.h
+K 25
+svn:wc:ra_dav:version-url
+V 31
+/svn/satfi/!svn/ver/3/src/log.h
+END
+satfi.c
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/svn/satfi/!svn/ver/10/src/satfi.c
+END
+getip.c
+K 25
+svn:wc:ra_dav:version-url
+V 33
+/svn/satfi/!svn/ver/3/src/getip.c
+END
+sequence.c
+K 25
+svn:wc:ra_dav:version-url
+V 36
+/svn/satfi/!svn/ver/3/src/sequence.c
+END
+config.h
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/svn/satfi/!svn/ver/3/src/config.h
+END
+msg.h
+K 25
+svn:wc:ra_dav:version-url
+V 31
+/svn/satfi/!svn/ver/3/src/msg.h
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/svn/satfi/!svn/ver/3/src/Makefile
+END
+sequence.h
+K 25
+svn:wc:ra_dav:version-url
+V 36
+/svn/satfi/!svn/ver/3/src/sequence.h
+END

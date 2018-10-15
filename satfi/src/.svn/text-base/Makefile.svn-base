@@ -1,0 +1,33 @@
+SRCS=$(wildcard *.c)
+OBJS=$(patsubst %.c, %.o, $(SRCS))
+LIBS:=pthread
+
+all:satfi getip
+
+satfi:satfi.o timer.o config.o log.o sequence.o
+	$(CC) $(LDFLAGS) satfi.o timer.o config.o log.o sequence.o -o satfi -lpthread
+
+getip:getip.o
+	$(CC) $(LDFLAGS) getip.o -o getip
+
+satfi.o:satfi.c
+	$(CC) $(CFLAGS) -c satfi.c
+
+timer.o:timer.c
+	$(CC) $(CFLAGS) -c timer.c
+
+config.o:config.c
+	$(CC) $(CFLAGS) -c config.c
+
+log.o:log.c
+	$(CC) $(CFLAGS) -c log.c
+
+sequence.o:sequence.c
+	$(CC) $(CFLAGS) -c sequence.c
+
+getip.o:getip.c
+	$(CC) $(CFLAGS) -c getip.c
+
+.PHONY: clean
+clean:
+	rm *.o satfi getip

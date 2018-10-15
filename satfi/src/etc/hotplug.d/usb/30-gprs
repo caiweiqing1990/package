@@ -1,0 +1,29 @@
+PRODID="19d2/16/0" 
+SYMLINK="ttyGPRS"
+
+if [ "${DEVTYPE}" = "usb_device" ];
+then exit
+fi
+
+if [ "${PRODUCT}" = "${PRODID}" ];
+then if [ "${ACTION}" = "add" ];
+then
+DEVICE_NAME=$(ls /sys/$DEVPATH | grep tty)
+if [ -z ${DEVICE_NAME} ];
+then logger -t Hotplug DEVICE_NAME is empty
+exit
+fi
+logger -t Hotplug DEVICE_NAME is ${DEVICE_NAME}
+ln -s /dev/${DEVICE_NAME} /dev/${SYMLINK}${DEVICENAME##*.}
+3g_manage ${DEVICE_NAME}
+logger -t Hotplug Symlink from /dev/${DEVICE_NAME} to /dev/${SYMLINK}${DEVICENAME##*.} created
+fi
+fi
+
+if [ "${PRODUCT}" = "${PRODID}" ];
+then if [ "${ACTION}" = "remove" ];
+then rm /dev/${SYMLINK}${DEVICENAME##*.}
+rm /dev/ttyGPRS
+logger -t Hotplug Symlink /dev/${SYMLINK}${DEVICENAME##*.} removed
+fi
+fi

@@ -1,0 +1,44 @@
+PRODID="5c6/9215/232"
+SYMLINK="ttyGPRS"
+SYMLINK0="ttyGPRS0"
+SYMLINK1="ttyGPRS1"
+SYMLINK2="ttyGPS"
+
+#[ -e /dev/ttyS0 ] && ln -s /dev/ttyS0 /dev/${SYMLINK2}
+
+if [ "${DEVTYPE}" = "usb_device" ];
+then exit
+fi
+if [ "${PRODUCT}" = "${PRODID}" ];
+then if [ "${ACTION}" = "add" ];
+then
+DEVICE_NAME=$(ls /sys/$DEVPATH | grep tty)
+if [ -z ${DEVICE_NAME} ];
+then logger -t Hotplug DEVICE_NAME is empty
+exit
+fi
+logger -t Hotplug DEVICE_NAME is ${DEVICE_NAME}
+if [ ${DEVICENAME##*.} -eq 1 ];
+then [ -e /dev/${SYMLINK2} ] || ln -s /dev/${DEVICE_NAME} /dev/${SYMLINK2}
+fi
+if [ ${DEVICENAME##*.} -eq 2 ];
+then ln -s /dev/${DEVICE_NAME} /dev/${SYMLINK0}
+fi
+if [ ${DEVICENAME##*.} -eq 3 ];
+then ln -s /dev/${DEVICE_NAME} /dev/${SYMLINK}
+fi
+if [ ${DEVICENAME##*.} -eq 4 ];
+then ln -s /dev/${DEVICE_NAME} /dev/${SYMLINK1}
+fi
+fi
+fi
+if [ "${PRODUCT}" = "${PRODID}" ];
+then if [ "${ACTION}" = "remove" ];
+then rm /dev/${SYMLINK}${DEVICENAME##*.}
+rm /dev/${SYMLINK}
+rm /dev/${SYMLINK0}
+rm /dev/${SYMLINK1}
+rm /dev/${SYMLINK2}
+logger -t Hotplug Symlink /dev/${SYMLINK}${DEVICENAME##*.} removed
+fi
+fi

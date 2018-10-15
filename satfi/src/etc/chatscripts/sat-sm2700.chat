@@ -1,0 +1,11 @@
+ABORT   BUSY
+ABORT   'NO CARRIER'
+ABORT   ERROR
+REPORT  CONNECT
+TIMEOUT 300
+""      "AT"
+OK      "AT+CGEREP=0,1"
+OK      "AT+CGDCONT=1,\"IP\",\"cmwap\",,0,0"
+OK      'AT+CGEQREQ=1,3,64,2048,0,0,0,1500,\"0E0\",\"0E0\",,0,0'
+OK      "ATDT*98*1#"
+CONNECT ' '
