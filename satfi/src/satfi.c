@@ -248,6 +248,7 @@ void printfhex(unsigned char *buf, int len);
 char *make_csq(char *buf, time_t *timep, int csqval);
 void CreateSOSMessage(char *Msid, int Lg, int Lt, int AlarmType);
 void CreateMessage(char *Msid, char *toPhone, int ID, char *messagedata);
+int AppCallUpRsp(int socket, short sat_state_phone);
 
 typedef struct _grpinfo
 {
@@ -4010,17 +4011,24 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 		
 		case ANSWERINGPHONE_CMD:
 		{
-			satfi_log("ANSWERINGPHONE_CMD\n");
 			//printf("ANSWERINGPHONE_CMD\n");
 			if(base.sat.sat_calling == 1)
 			{
 				AnsweringPhone();
-				
-				MsgAppHangUpRsp rsp;
-				rsp.header.length = sizeof(MsgAppHangUpRsp);
-				rsp.header.mclass = ANSWERINGPHONE_RSP;
-				rsp.result = 0;
-				n = write(socket, &rsp, rsp.header.length);
+				satfi_log("ANSWERINGPHONE_CMD %d\n", base.sat.sat_state_phone);
+				if(base.sat.sat_state_phone==SAT_STATE_PHONE_RING_COMING)
+				{
+					MsgAppHangUpRsp rsp;
+					rsp.header.length = sizeof(MsgAppHangUpRsp);
+					rsp.header.mclass = ANSWERINGPHONE_RSP;
+					rsp.result = 0;
+					n = write(socket, &rsp, rsp.header.length);			
+				}
+				else
+				{
+					AppCallUpRsp(socket, 6);
+					base.sat.sat_calling = 0;
+				}
 			}
 		}
 		break;
@@ -8440,13 +8448,19 @@ static void *ring_detect(void *p)
 						{
 							for(i=0; i<t->famNumConut && i<10; i++)
 							{
-								satfi_log("%s %s", t->FamiliarityNumber[i], base->sat.called_number);
 								if(strstr(t->FamiliarityNumber[i], base->sat.called_number))
 								{
+									satfi_log("%s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
 									ringsocket = t->socketfd;
 									break;
 								}
 							}
+
+							if(ringsocket>0)
+							{
+								break;
+							}
+							
 							t=t->next;
 						}
 					}
@@ -8459,6 +8473,7 @@ static void *ring_detect(void *p)
 							ringsocket = t->socketfd;
 							if(ringsocket>0)
 							{
+								satfi_log("ringsocket=%d %.21s", ringsocket, t->userid);
 								break;
 							}
 							t=t->next;
