@@ -2951,7 +2951,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				{
 					if(data[idx-3]=='\n' && data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						//satfi_log("%d %d %s",strlen(data), idx, data);
+						satfi_log("%d %d %d %d %s",strlen(data), *satfd, base.sat.sat_fd_message, idx, data);
 						if(base.sat.sat_fd_message == *satfd)
 						{
 							unsigned char Decode[1024] = {0};
@@ -3219,11 +3219,21 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else if(base.sat.sat_state_phone==SAT_STATE_PHONE_RING_COMING) 
 					{
-						satfi_log("clcccnt %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone);
+						static int cc=0;
+						satfi_log("clcccnt %d %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone, cc);
 						if(clcccntpre > 0 && clcccntpre == clcccnt)
 						{
-							base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
-							clcccnt=0;
+							cc++;
+							if(cc > 2)
+							{
+								base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
+								cc=0;
+								clcccnt=0;
+							}
+						}
+						else
+						{
+							cc = 0;
 						}
 						clcccntpre = clcccnt;
 					}
@@ -3380,7 +3390,37 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else
 					{
-						satfi_log("not parse sat data :%s", data);						
+						satfi_log("not parse sat data %d:%s",*satfd, data);
+						if(base.sat.sat_fd_message == *satfd)
+						{
+							unsigned char Decode[1024] = {0};
+							char OAphonenum[21] = {0};	//发送方地址（手机号码）
+							int i=0;
+							
+							for(i=0;i<strlen(data);i++)
+							{
+								if(data[i] == '0' && data[i+1] == '8')
+								{
+									break;
+								}
+							}
+							
+							int len = MessageParse(&data[i], OAphonenum, Decode);
+							satfi_log("MessageParse11 %s %s %d %d %d", OAphonenum, Decode, *satfd, i, strlen(data));
+							char tmp[1024]={0};
+							MsgGetMessageRsp *rsp = (MsgGetMessageRsp *)tmp;
+							rsp->header.length = sizeof(MsgGetMessageRsp)+strlen(Decode)+1;
+							rsp->header.mclass = RECV_MESSAGE;
+							//strncpy(rsp1->MsID, req->MsID, 21);
+							rsp->Result = 1;
+							strncpy(rsp->SrcMsID, OAphonenum, 21);
+							rsp->Type = 3;
+							rsp->ID = time(0);
+							unsigned long long t = (unsigned long long)rsp->ID*1000;
+							memcpy(rsp->Date, &t, sizeof(rsp->Date));
+							memcpy(rsp->message, Decode, strlen(Decode)+1);
+							Data_To_ExceptMsID("TOALLMSID", rsp);						
+						}
 					}
 					idx=0;
 				}
@@ -4014,7 +4054,6 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 			//printf("ANSWERINGPHONE_CMD\n");
 			if(base.sat.sat_calling == 1)
 			{
-				AnsweringPhone();
 				satfi_log("ANSWERINGPHONE_CMD %d\n", base.sat.sat_state_phone);
 				if(base.sat.sat_state_phone==SAT_STATE_PHONE_RING_COMING)
 				{
@@ -4029,6 +4068,8 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 					AppCallUpRsp(socket, 6);
 					base.sat.sat_calling = 0;
 				}
+				
+				AnsweringPhone();
 			}
 		}
 		break;
@@ -7586,7 +7627,7 @@ void *SystemServer(void *p)
 			}
 		}
 
-		if(base->sat.sat_calling == 0)
+		//if(base->sat.sat_calling == 0)
 		{
 			if(base->sat.sat_msg_sending == 0)
 			{
@@ -8448,9 +8489,10 @@ static void *ring_detect(void *p)
 						{
 							for(i=0; i<t->famNumConut && i<10; i++)
 							{
+								satfi_log("1 %s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
 								if(strstr(t->FamiliarityNumber[i], base->sat.called_number))
 								{
-									satfi_log("%s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
+									satfi_log("2 %s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
 									ringsocket = t->socketfd;
 									break;
 								}
@@ -8473,7 +8515,7 @@ static void *ring_detect(void *p)
 							ringsocket = t->socketfd;
 							if(ringsocket>0)
 							{
-								satfi_log("ringsocket=%d %.21s", ringsocket, t->userid);
+								satfi_log("ringsocket=%d %.21s %.21s", ringsocket, t->userid, base->sat.called_number);
 								break;
 							}
 							t=t->next;
