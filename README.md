@@ -1,7 +1,12 @@
 # openwrt-sdk-ramips
-echo "# test" >> README.md
-git init
-git add README.md
-git commit -m "first commit"
-git remote add origin git@github.com:caiweiqing1990/test.git
-git push -u origin master
+# echo "# test" >> README.md
+# git init
+# git add README.md
+# git commit -m "first commit"
+# git remote add origin git@github.com:caiweiqing1990/test.git
+# git push -u origin master
+
+
+# git add 
+# git commit -m "satfi"
+# git push -u origin master
