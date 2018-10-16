@@ -3216,21 +3216,11 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else if(base.sat.sat_state_phone==SAT_STATE_PHONE_RING_COMING) 
 					{
-						static int cc=0;
-						satfi_log("clcccnt %d %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone, cc);
+						satfi_log("clcccnt %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone);
 						if(clcccntpre > 0 && clcccntpre == clcccnt)
 						{
-							cc++;
-							if(cc > 2)
-							{
 								base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
-								cc=0;
 								clcccnt=0;
-							}
-						}
-						else
-						{
-							cc = 0;
 						}
 						clcccntpre = clcccnt;
 					}
