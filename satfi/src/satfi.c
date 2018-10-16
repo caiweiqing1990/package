@@ -779,11 +779,10 @@ int CreateMsgData(char *inPhoneNum, char *indata, char *outdata)
 
 void CheckisHaveMessageAndTriggerSend(int Serialfd)
 {
-	pthread_mutex_lock(&pack_mutex);
 	if(MessagesHead != NULL)
 	{
-		if(Serialfd > 0 && base.sat.sat_status == 1)
-		//if(Serialfd > 0)
+		satfi_log("CheckisHaveMessageAndTriggerSend %d", base.sat.sat_status);
+		if(Serialfd > 0)
 		{
 			char buf[128];
 			sprintf(buf, "AT+CMGS=%d\r", strlen(MessagesHead->Data)/2 - 1);
@@ -792,7 +791,6 @@ void CheckisHaveMessageAndTriggerSend(int Serialfd)
 			base.sat.sat_msg_sending = 1;
 		}
 	}
-	pthread_mutex_unlock(&pack_mutex);
 }
 
 void MessageSend(int Serialfd)
@@ -2282,11 +2280,11 @@ short get_sat_status()
 {
   short status = 0;
   if(bSatNetWorkActive == 0) status = 9;				  //冻结
+  else if(base.sat.sat_calling == 1) status = 6;     //正在进行电路域的呼叫
   else if(base.sat.sat_status == 1) status = 0;			  //工作正常
   else if(strlen(base.sat.sat_imei)==0) status = 2;       //没有读到IMEI
   else if(strlen(base.sat.sat_imsi)==0 || 
   	base.sat.sat_state == SAT_SIM_NOT_INSERTED) status = 3;  //没有读到IMSI
-  else if(base.sat.sat_calling == 1) status = 6;     //正在进行电路域的呼叫
   else if(base.sat.sat_state == SAT_SIM_ARREARAGE) status = 8;     //欠费
   else if(base.sat.sat_dialing == 1 || 
   	base.sat.sat_state == SAT_STATE_DIALING) status = 1;     //正在拨号
@@ -2910,7 +2908,6 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 			}
 			else if(idx>4)
 			{
-				//satfi_log("%s", data);
 				static int clcccnt=0;
 				static int clcccntpre=0;
 				
@@ -2949,11 +2946,11 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				}
 				else if(strstr(data,"+CMT"))
 				{
-					if(data[idx-3]=='\n' && data[idx-2]=='\n' && data[idx-1]=='\n')
+					if(idx>18 && data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						satfi_log("%d %d %d %d %s",strlen(data), *satfd, base.sat.sat_fd_message, idx, data);
 						if(base.sat.sat_fd_message == *satfd)
 						{
+							satfi_log("%d %d %d %s",strlen(data), base.sat.sat_fd_message, idx, data);
 							unsigned char Decode[1024] = {0};
 							char OAphonenum[21] = {0};	//发送方地址（手机号码）
 							int i=0;
@@ -3080,7 +3077,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				{
 					if(data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						satfi_log("%s:%s",__FUNCTION__, data);
+						satfi_log("%d,%s:%s",*satfd, __FUNCTION__, data);
 
 						MsgSendMsgRsp rsp;
 						rsp.header.length = sizeof(MsgSendMsgRsp);
@@ -3390,37 +3387,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else
 					{
-						satfi_log("not parse sat data %d:%s",*satfd, data);
-						if(base.sat.sat_fd_message == *satfd)
-						{
-							unsigned char Decode[1024] = {0};
-							char OAphonenum[21] = {0};	//发送方地址（手机号码）
-							int i=0;
-							
-							for(i=0;i<strlen(data);i++)
-							{
-								if(data[i] == '0' && data[i+1] == '8')
-								{
-									break;
-								}
-							}
-							
-							int len = MessageParse(&data[i], OAphonenum, Decode);
-							satfi_log("MessageParse11 %s %s %d %d %d", OAphonenum, Decode, *satfd, i, strlen(data));
-							char tmp[1024]={0};
-							MsgGetMessageRsp *rsp = (MsgGetMessageRsp *)tmp;
-							rsp->header.length = sizeof(MsgGetMessageRsp)+strlen(Decode)+1;
-							rsp->header.mclass = RECV_MESSAGE;
-							//strncpy(rsp1->MsID, req->MsID, 21);
-							rsp->Result = 1;
-							strncpy(rsp->SrcMsID, OAphonenum, 21);
-							rsp->Type = 3;
-							rsp->ID = time(0);
-							unsigned long long t = (unsigned long long)rsp->ID*1000;
-							memcpy(rsp->Date, &t, sizeof(rsp->Date));
-							memcpy(rsp->message, Decode, strlen(Decode)+1);
-							Data_To_ExceptMsID("TOALLMSID", rsp);						
-						}
+						satfi_log("not parse sat data %d:%d:%s",base.sat.sat_fd_message, *satfd, data);						
 					}
 					idx=0;
 				}
@@ -7627,7 +7594,7 @@ void *SystemServer(void *p)
 			}
 		}
 
-		//if(base->sat.sat_calling == 0)
+		if(base->sat.sat_calling == 0 || base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
 		{
 			if(base->sat.sat_msg_sending == 0)
 			{
@@ -7933,9 +7900,6 @@ static void *CallUpThread(void *p)
 	BASE *base = (BASE*)p;
 	char buf[256] = {0};
 	
-	base->sat.sat_status = 0;
-	base->sat.sat_available = 0;	
-
 	base->sat.sat_state_phone = SAT_STATE_PHONE_CLCC;
 	int atdwaitcnt=0,clcccnt=0,ringcnt=0,dialcnt=0,dialfailecnt=0;
 
