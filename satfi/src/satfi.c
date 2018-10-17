@@ -3370,6 +3370,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 							satfi_log("message send success %d", rsp.ID);
 							MessageDel();
 							base.sat.sat_msg_sending = 0;
+							clcccnt = 0;
 						}							  
 						idx=0;
 					}
