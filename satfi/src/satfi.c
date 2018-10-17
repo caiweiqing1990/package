@@ -2599,7 +2599,7 @@ static void *func_y(void *p)
 			base->sat.sat_msg_sending = 0;
 			myexec("power_mode msm01a reset", NULL, NULL);
 			sat_unlock();
-			seconds_sleep(10);
+			seconds_sleep(20);
 			continue;
 			
 		}
@@ -2625,12 +2625,14 @@ static void *func_y(void *p)
 				case SAT_STATE_AT:
 					satfi_log("func_y:send AT to SAT Module\n");
 					uart_send(base->sat.sat_fd, "AT\r\n", 4);
+					uart_send(base->sat.sat_fd_message, "AT\r\n", 4);
 					base->sat.sat_state = SAT_STATE_AT_W;
 					counter=0;
 					break;
 				case SAT_STATE_AT_W:
 					satfi_log("func_y:send AT to SAT Module %d\n", counter);
 					uart_send(base->sat.sat_fd, "AT\r\n", 4);
+					uart_send(base->sat.sat_fd_message, "AT\r\n", 4);
 					base->sat.sat_state = SAT_STATE_AT_W;
 					counter++;
 					if(counter >= 20)
@@ -2977,7 +2979,40 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 							unsigned long long t = (unsigned long long)rsp->ID*1000;
 							memcpy(rsp->Date, &t, sizeof(rsp->Date));
 							memcpy(rsp->message, Decode, strlen(Decode)+1);
-							Data_To_ExceptMsID("TOALLMSID", rsp);						
+
+
+							USER * toUser = gp_users;
+							int toUserSocket=-1;
+							while(toUser)
+							{
+								for(i=0; i<toUser->famNumConut && i<10; i++)
+								{
+									if(strstr(toUser->FamiliarityNumber[i], OAphonenum))
+									{
+										satfi_log("%s OAphonenum=%s %.21s", toUser->FamiliarityNumber[i], OAphonenum, toUser->userid);
+										toUserSocket = toUser->socketfd;
+										break;
+									}
+								}
+							
+								if(toUserSocket>0)
+								{
+									break;
+								}
+								
+								toUser=toUser->next;
+							}
+
+							if(toUserSocket == -1)
+							{
+								Data_To_ExceptMsID("TOALLMSID", rsp);
+							}
+							else
+							{
+								strncpy(rsp->MsID, toUser->userid, USERID_LLEN);
+								Data_To_MsID(toUser->userid, rsp);
+							}
+							
 						}
 						idx = 0;
 					}
@@ -2991,28 +3026,23 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 						base.sat.sat_csq_value = parsecsq(data, idx);
 						base.sat.sat_csq_ltime = time(0);
 						//satfi_log("sat_csq_value = %d\n", base.sat.sat_csq_value);
-						if(base.sat.sat_csq_value != 31 && base.sat.sat_csq_value>=base.sat.sat_csq_limit_value)
+						if(base.sat.sat_csq_value == 31 || base.sat.sat_csq_value == 99) base.sat.sat_csq_value = 0;
+
+						if(base.sat.sat_csq_value>=base.sat.sat_csq_limit_value)
 						{
 							//satfi_log("sat_csq_good_cnt %d %d\n", sat_csq_good_cnt, base.sat.sat_csq_value);
-							if(base.sat.sat_state==SAT_STATE_CSQ_W)
-							{
-								base.sat.sat_state = SAT_STATE_CREG;
-							}
-
 							NotifyAllUserSatState(SAT_LINK_NORMAL);
 						}
 						else
 						{							
-							if(base.sat.sat_state==SAT_STATE_CSQ_W)
-							{
-								base.sat.sat_state = SAT_STATE_CSQ;
-							}
-
-							if(base.sat.sat_csq_value == 31 || base.sat.sat_csq_value == 99) base.sat.sat_csq_value = 0;
-							
 							NotifyAllUserSatState(SAT_LINK_DISCONNECT);
 						}
 
+						if(base.sat.sat_state==SAT_STATE_CSQ_W)
+						{
+							base.sat.sat_state = SAT_STATE_CREG;
+						}
+						
 						sat_unlock();
 						idx=0;
 					}
@@ -3077,7 +3107,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				{
 					if(data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						satfi_log("%d,%s:%s",*satfd, __FUNCTION__, data);
+						satfi_log("%d,%d,%s:%s",base.sat.sat_calling, *satfd, __FUNCTION__, data);
 
 						MsgSendMsgRsp rsp;
 						rsp.header.length = sizeof(MsgSendMsgRsp);
@@ -3086,10 +3116,10 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 						rsp.Result = 1;//短信发送失败
 						rsp.ID = MessagesHead->ID;
 						Data_To_MsID(rsp.MsID, &rsp);
+						MessageDel();
 						
 						base.sat.sat_msg_sending = 0;
 						idx=0;
-						MessageDel();
 					}
 				}
 				else if(strstr(data,"+CME ERROR"))
@@ -7023,7 +7053,7 @@ static void *check_route(void *p)
 				else
 				{
 					viasatroutecanuse = 0;
-					base->sat.sat_status = 0;
+					//base->sat.sat_status = 0;
 				}
 			}
 			else
@@ -7038,7 +7068,7 @@ static void *check_route(void *p)
 						myexec(cmdUsbRouAdd, NULL, NULL);
 					}
 					viasatroutecanuse = 0;
-					base->sat.sat_status = 0;
+					//base->sat.sat_status = 0;
 					continue;
 				}
 			}
@@ -7584,7 +7614,7 @@ void *SystemServer(void *p)
 			}
 		}
 
-		if(base->sat.sat_calling == 0 || base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
+		if(base->sat.sat_state_phone != SAT_STATE_PHONE_DIALING)
 		{
 			if(base->sat.sat_msg_sending == 0)
 			{
@@ -8443,10 +8473,9 @@ static void *ring_detect(void *p)
 						{
 							for(i=0; i<t->famNumConut && i<10; i++)
 							{
-								satfi_log("1 %s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
 								if(strstr(t->FamiliarityNumber[i], base->sat.called_number))
 								{
-									satfi_log("2 %s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
+									satfi_log("%s %s %.21s", t->FamiliarityNumber[i], base->sat.called_number, t->userid);
 									ringsocket = t->socketfd;
 									break;
 								}

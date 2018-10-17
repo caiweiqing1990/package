@@ -114,7 +114,7 @@ static void *func_xx(void *p)
 					else if(idx>4)
 					{
 						data[idx] = 0;
-						//printf("%s", data);
+						printf("%s", data);
 					  if(strstr(data,"\n\nOK\n\n"))
 					  {
 						  if(data[idx-2]=='\n' && data[idx-1]=='\n')
