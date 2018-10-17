@@ -3358,7 +3358,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 								req.Money = 40;
 
 								SaveDataToFile(CALL_RECORDS_FILE ,(char *)&req, req.header.length);
-							}
+							} 
 
 							MsgSendMsgRsp rsp;
 							rsp.header.length = sizeof(MsgSendMsgRsp);
