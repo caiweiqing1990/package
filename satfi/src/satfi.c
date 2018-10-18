@@ -3149,11 +3149,12 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					//satfi_log("%s", data);
 					if(data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
+						sat_lock();
 						if(base.sat.sat_state_phone == SAT_STATE_PHONE_RING_COMING)
 						{
 							clcccnt++;
 						}
-						sat_lock();
+						
 						if(data[13] == '0')//通话中
 						{
 							//base.sat.sat_state_phone = SAT_STATE_PHONE_DIALING_SUCCESS;
@@ -3207,15 +3208,6 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				{
 					//satfi_log("%s %d", data, __LINE__);
 					sat_lock();
-					if(base.sat.sat_state==SAT_STATE_AT_W)
-					{
-						base.sat.sat_state = SAT_STATE_SIM_ACTIVE;
-					}
-					else if(base.sat.sat_state==SAT_STATE_SIM_ACTIVE_W)
-					{
-						base.sat.sat_state = SAT_STATE_IMSI;
-					}
-
 					if(base.sat.sat_state_phone==SAT_STATE_PHONE_CLCC) 
 					{
 						base.sat.sat_state_phone = SAT_STATE_PHONE_CLCC_OK;//可进行拨号
@@ -3246,13 +3238,24 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else if(base.sat.sat_state_phone==SAT_STATE_PHONE_RING_COMING) 
 					{
-						satfi_log("clcccnt %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone);
-						if(clcccntpre > 0 && clcccntpre == clcccnt)
+						if(base.sat.sat_fd == *satfd)
 						{
-								base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
-								clcccnt=0;
+							satfi_log("clcccnt %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone);
+							if(clcccntpre > 0 && clcccntpre == clcccnt)
+							{
+									base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
+									clcccnt=0;
+							}
+							clcccntpre = clcccnt;
 						}
-						clcccntpre = clcccnt;
+					}
+					else if(base.sat.sat_state==SAT_STATE_AT_W)
+					{
+						base.sat.sat_state = SAT_STATE_SIM_ACTIVE;
+					}
+					else if(base.sat.sat_state==SAT_STATE_SIM_ACTIVE_W)
+					{
+						base.sat.sat_state = SAT_STATE_IMSI;
 					}
 					else 
 					{
@@ -3370,7 +3373,6 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 							satfi_log("message send success %d", rsp.ID);
 							MessageDel();
 							base.sat.sat_msg_sending = 0;
-							clcccnt = 0;
 						}							  
 						idx=0;
 					}
@@ -3404,7 +3406,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else if(strstr(data, "SATSIGNAL"))
 					{
-						
+						//satfi_log("%s", data);
 					}
 					else
 					{
@@ -8740,7 +8742,7 @@ static void *recvfrom_app_voice_udp(void *p)
 	satfi_log("select_voice_udp %d", sock);
 	pcm_playback_type playback;
 	playback.pcmbuf = voicebuf;
-	playback.playback_max_size = 8000;
+	playback.playback_max_size = 4000;
 	while (1)
     {
 		FD_ZERO(&fds);/* 每次循环都需要清空 */
