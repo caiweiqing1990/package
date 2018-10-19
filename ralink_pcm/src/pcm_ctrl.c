@@ -1759,23 +1759,6 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			ptrpcm_record = (pcm_record_type*)arg;
 			if(ptrpcm_config->nch_active <= 0)
 				return -1;
-			#if 0
-			do{
-				spin_lock_irqsave(&ptrpcm_config->lock, flags);	
-				if((ptrpcm_config->mmap_rd_idx+1)%MAX_PCMMMAP_PAGE!=ptrpcm_config->mmap_wt_idx)
-				{
-					ptrpcm_config->mmap_rd_idx = (ptrpcm_config->mmap_rd_idx+1)%MAX_PCMMMAP_PAGE;
-					p8Data = ptrpcm_config->mmapbuf+ptrpcm_config->mmap_rd_idx*PCM_PAGE_SIZE;	
-					spin_unlock_irqrestore(&ptrpcm_config->lock, flags);
-					break;
-				}
-				else
-				{
-					spin_unlock_irqrestore(&ptrpcm_config->lock, flags);
-					interruptible_sleep_on(&(ptrpcm_config->pcm_qh));
-				}
-			}while(1);
-			#endif
 			//使用DMA Channel4从PCM0_FIFO读取数据，接收大小为ptrpcm_record->size，最大65535，读取完毕产生中断调用pcm_dma_rx_finish，唤醒进程			
 			GdmaPcmRx((u32)PCM_CH_FIFO(0), (u32)ptrpcm_config->mmapbuf_r, 0, 0, ptrpcm_record->size, pcm_dma_rx_finish, dma_finish);
 			GdmaUnMaskChannel(GDMA_PCM_RX(0,0));
@@ -1788,23 +1771,6 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			ptrpcm_playback = arg;
 			if(ptrpcm_config->nch_active <= 0)
 				return -1;
-			#if 0
-			do{
-				spin_lock_irqsave(&ptrpcm_config->lock, flags);	
-				if((ptrpcm_config->mmap_wt_idx+1)%MAX_PCMMMAP_PAGE!=ptrpcm_config->mmap_rd_idx)
-				{
-					ptrpcm_config->mmap_wt_idx = (ptrpcm_config->mmap_wt_idx+1)%MAX_PCMMMAP_PAGE;
-					p8Data = ptrpcm_config->mmapbuf+ptrpcm_config->mmap_wt_idx*PCM_PAGE_SIZE;	
-					spin_unlock_irqrestore(&ptrpcm_config->lock, flags);
-					break;
-				}
-				else
-				{
-					spin_unlock_irqrestore(&ptrpcm_config->lock, flags);
-					interruptible_sleep_on(&(ptrpcm_config->pcm_qh));
-				}
-			}while(1);
-			#endif
 			//使用DMA Channel6向PCM0_FIFO发送数据，发送大小为ptrpcm_record->size，最大65535，并且等待发送完毕,并调用pcm_dma_tx_finish，唤醒进程
 			//printk("%d %d\n",ptrpcm_config->data_offset_t, ptrpcm_playback->size);
 			copy_from_user(ptrpcm_config->mmapbuf_t + ptrpcm_config->data_offset_t, ptrpcm_playback->pcmbuf, ptrpcm_playback->size);
