@@ -150,8 +150,8 @@
 #define RECV_MESSAGE				0x0059
 
 #define MODIFY_FAMILY_PHONE			0x0060
-
-#define APP_MAX_MCLASS				MODIFY_FAMILY_PHONE
+#define ADD_FAMILY_PHONE			0x0061
+#define REMOVE_FAMILY_PHONE			0x0062
 
 #pragma pack (1)
 
@@ -1005,6 +1005,22 @@ typedef struct _app_modify_family_phone
 	char oldPhone[21];
 	char newPhone[21];
 } MsgModifyPamilyPhone;
+
+//ADD_FAMILY_PHONE
+typedef struct _app_add_family_phone
+{
+	MsgHeader header;
+	char MsID[21];
+	char Phone[21];
+} MsgAddPamilyPhone;
+
+//REMOVE_FAMILY_PHONE
+typedef struct _app_remove_family_phone
+{
+	MsgHeader header;
+	char MsID[21];
+	char Phone[21];
+} MsgRemovePamilyPhone;
 
 #pragma pack ()
 

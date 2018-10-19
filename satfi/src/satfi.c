@@ -265,7 +265,7 @@ typedef struct _user {
   GRPINFO grpinfo[30];				//群组个数最多保存30个，可修改
   int udp_voice_packnum;			//用于语音对讲计费，统计收到的语音包数
   int famNumConut;
-  char FamiliarityNumber[10][USERID_LLEN];//亲情号码最多10个
+  char FamiliarityNumber[100][USERID_LLEN];//亲情号码最多100个
   struct _user *next;
 }USER;
 
@@ -3615,14 +3615,22 @@ void add_user(char *msid, int socketfd, int count ,char FamiliarityNumber[][USER
 	{
 		if(strncmp(pUser->userid, msid, USERID_LLEN) == 0)
 		{
-			satfi_log("UPDATE FIND USER %.21s %d\n",msid,pUser->socketfd);
+			satfi_log("UPDATE FIND USER %.21s %d %d\n",msid, pUser->socketfd, sizeof(pUser->FamiliarityNumber)/sizeof(pUser->FamiliarityNumber[0]));
 			pUser->socketfd = socketfd;
 			strncpy(pUser->userid, msid, USERID_LLEN);
 			pUser->famNumConut=count;
-			for(i=0;i<count && i<10;i++)
+			for(i=0;i<count && i<sizeof(pUser->FamiliarityNumber)/sizeof(pUser->FamiliarityNumber[0]);i++)
 			{
 				strncpy(pUser->FamiliarityNumber[i], FamiliarityNumber[i], USERID_LLEN);
 				satfi_log("FamiliarityNumber[%d] %.21s\n",i, pUser->FamiliarityNumber[i]);
+			}
+
+			if(count==0)
+			{
+				for(i=0;i<sizeof(pUser->FamiliarityNumber)/sizeof(pUser->FamiliarityNumber[0]);i++)
+				{
+					bzero(pUser->FamiliarityNumber[i], USERID_LLEN);
+				}
 			}
 			
 			break;
@@ -3640,7 +3648,7 @@ void add_user(char *msid, int socketfd, int count ,char FamiliarityNumber[][USER
 			pUser->socketfd = socketfd;
 			strncpy(pUser->userid, msid, USERID_LLEN);
 			pUser->famNumConut=count;
-			for(i=0;i<count && i<10;i++)
+			for(i=0;i<count && i<sizeof(pUser->FamiliarityNumber)/sizeof(pUser->FamiliarityNumber[0]);i++)
 			{
 				strncpy(pUser->FamiliarityNumber[i], FamiliarityNumber[i], USERID_LLEN);
 				satfi_log("FamiliarityNumber[%d] %.21s\n",i, pUser->FamiliarityNumber[i]);
@@ -5182,6 +5190,65 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 							break;
 						}
 					}
+					break;
+				}
+				pUser = pUser->next;
+			}
+		}
+		break;
+		
+		case ADD_FAMILY_PHONE:
+		{
+			MsgAddPamilyPhone *req = (MsgAddPamilyPhone *)pack;
+			USER *pUser = gp_users;
+			int i=0;
+			while(pUser)
+			{
+				if(strncmp(pUser->userid, req->MsID, 21) == 0)
+				{
+					for(i=0;i<pUser->famNumConut;i++)
+					{
+						if(strlen(pUser->FamiliarityNumber[i]) == 0)
+						{
+							strncpy(pUser->FamiliarityNumber[i], req->Phone, USERID_LLEN);
+							satfi_log("1famNumConut=%d, addPhone=%s", pUser->famNumConut, req->Phone);
+							break;
+						}
+					}
+
+					if(i == pUser->famNumConut && i<sizeof(pUser->FamiliarityNumber)/sizeof(pUser->FamiliarityNumber[0]))
+					{
+						strncpy(pUser->FamiliarityNumber[pUser->famNumConut], req->Phone, USERID_LLEN);
+						pUser->famNumConut++;							
+						satfi_log("2famNumConut=%d, addPhone=%s", pUser->famNumConut, req->Phone);
+					}
+					
+					break;
+				}
+				pUser = pUser->next;
+			}
+		}
+		break;
+		
+		case REMOVE_FAMILY_PHONE:
+		{
+			MsgRemovePamilyPhone *req = (MsgRemovePamilyPhone *)pack;
+			USER *pUser = gp_users;
+			int i=0;
+			while(pUser)
+			{
+				if(strncmp(pUser->userid, req->MsID, 21) == 0)
+				{
+					for(i=0;i<pUser->famNumConut;i++)
+					{
+						if(strstr(pUser->FamiliarityNumber[i], req->Phone))
+						{
+							bzero(pUser->FamiliarityNumber[i], USERID_LLEN);
+							satfi_log("removePhone=%s %d", req->Phone, strlen(pUser->FamiliarityNumber[i]));
+							break;
+						}
+					}
+					break;
 				}
 				pUser = pUser->next;
 			}
@@ -8857,7 +8924,7 @@ static void *sendto_app_voice_udp(void *p)
 	int size = 320;
 	int ret;
 	
-	char voicebuf[8000];
+	char voicebuf[4000];
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	int len = sizeof(struct sockaddr_in);
 	pcm_record_type record;
@@ -8902,9 +8969,9 @@ static void *sendto_app_voice_udp(void *p)
 					if(record.size > 0 && ntohs(clientAddr1->sin_port) != 0)
 					{
 						int offset = 0;
-						int size = 320;
+						int size = 160;
 						while(offset != record.size)
-						{							
+						{
 							if(base->sat.sat_state_phone == SAT_STATE_PHONE_ATH_W)
 							{
 								satfi_log("SAT_STATE_PHONE_ATH_W BREAK\n");
