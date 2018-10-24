@@ -1,6 +1,7 @@
 #KERN_DIR = /home/weiqing/7620/openwrt/openwrt-sdk-ramips/build_dir/target-mipsel_24kec+dsp_uClibc-0.9.33.2/linux-ramips_mt7620/linux-3.10.14-p112871
 
-PKG_DIR = /home/weiqing/7620/openwrt/openwrt-sdk-ramips/package/ralink_pcm/src
+PKG_DIR = $(TOPDIR)/package/ralink_pcm/src
+
 obj-m +=ralink_pcm.o
 ralink_pcm-objs := 	pcm_ctrl.o \
 					codec_lib/codec_api.o \
