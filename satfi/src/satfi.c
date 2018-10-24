@@ -3088,7 +3088,13 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 								satfi_log("%s %d\n",data, __LINE__);
 								base.sat.sat_state = SAT_STATE_RESTART;
 								base.sat.sat_status = 0;
-							}				
+							}
+							else
+							{
+								satfi_log("%s %d\n",data, __LINE__);
+								base.sat.sat_state = SAT_STATE_RESTART;
+								base.sat.sat_status = 0;								
+							}
 						}
 						
 						idx=0;

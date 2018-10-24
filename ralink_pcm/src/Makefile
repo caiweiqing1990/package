@@ -1,7 +1,5 @@
 #KERN_DIR = /home/weiqing/7620/openwrt/openwrt-sdk-ramips/build_dir/target-mipsel_24kec+dsp_uClibc-0.9.33.2/linux-ramips_mt7620/linux-3.10.14-p112871
 
-PKG_DIR = $(TOPDIR)/package/ralink_pcm/src
-
 obj-m +=ralink_pcm.o
 ralink_pcm-objs := 	pcm_ctrl.o \
 					codec_lib/codec_api.o \
@@ -18,10 +16,10 @@ ralink_pcm-objs := 	pcm_ctrl.o \
 					proslic_api/example_drivers/ralink/proslic_ppt_mb/si3226/proslic_spi_api.o \
 					proslic_api/example_drivers/ralink/timer/proslic_timer_intf_linux.o
 
-EXTRA_CFLAGS += -I$(PKG_DIR)/proslic_api/inc
-EXTRA_CFLAGS += -I$(PKG_DIR)/proslic_api/config_inc
-EXTRA_CFLAGS += -I$(PKG_DIR)/proslic_api/example_drivers/ralink/proslic_ppt_mb
-EXTRA_CFLAGS += -I$(PKG_DIR)/proslic_api/example_drivers/ralink/timer
+EXTRA_CFLAGS += -I$(SUBDIRS)/proslic_api/inc
+EXTRA_CFLAGS += -I$(SUBDIRS)/proslic_api/config_inc
+EXTRA_CFLAGS += -I$(SUBDIRS)/proslic_api/example_drivers/ralink/proslic_ppt_mb
+EXTRA_CFLAGS += -I$(SUBDIRS)/proslic_api/example_drivers/ralink/timer
 EXTRA_CFLAGS += -DSI3226X
 EXTRA_CFLAGS += -DSLIC_SILICON
 EXTRA_CFLAGS += -DCONFIG_RALINK_PCM_SPICH=1

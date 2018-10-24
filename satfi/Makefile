@@ -12,7 +12,7 @@ define Package/satfi
 	SECTION:=utils
 	CATEGORY:=Utilities
 	TITLE:=Cjb -- Inmabeidou Chuanjiabao Service
-	DEPENDS:=+libpthread +libspeex +libspeexdsp
+	#DEPENDS:=+libpthread +libspeex +libspeexdsp
 endef
 
 define Package/satfi/description
