@@ -640,6 +640,7 @@ void pcm_dma_tx_finish(u32 dma_ch)
 	ev_dma_t = 1;
 	wake_up_interruptible(&dma_waitq_t);	 /* 唤醒休眠的进程 */
 	ppcm_config->bStartPlayback = 0;
+	ppcm_config->data_offset_t=0;
 }
 
 void pcm_dma_tx_isr(u32 dma_ch)
@@ -1773,6 +1774,7 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 				return -1;
 			//使用DMA Channel6向PCM0_FIFO发送数据，发送大小为ptrpcm_record->size，最大65535，并且等待发送完毕,并调用pcm_dma_tx_finish，唤醒进程
 			//printk("%d %d\n",ptrpcm_config->data_offset_t, ptrpcm_playback->size);
+#if 0
 			copy_from_user(ptrpcm_config->mmapbuf_t + ptrpcm_config->data_offset_t, ptrpcm_playback->pcmbuf, ptrpcm_playback->size);
 			ptrpcm_config->data_offset_t += ptrpcm_playback->size;
 
@@ -1805,7 +1807,27 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 				size = ptrpcm_config->data_offset_t;
 				ptrpcm_config->bStartPlayback = 1;
 			}
+#else
+			if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size)
+			{
+				if(ptrpcm_config->bStartPlayback == 1)
+				{
+					ev_dma_t = 0;
+					wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠	
+				}
+			}
 
+			copy_from_user(ptrpcm_config->mmapbuf_t + ptrpcm_config->data_offset_t, ptrpcm_playback->pcmbuf, ptrpcm_playback->size);
+			ptrpcm_config->data_offset_t += ptrpcm_playback->size;
+
+			if(ptrpcm_config->bStartPlayback == 0)
+			{
+				memset(ptrpcm_config->mmapbuf_t, 0, ptrpcm_playback->playback_max_size);
+				GdmaPcmTx((u32)ptrpcm_config->mmapbuf_t, (u32)PCM_CH_FIFO(0), 0, 0, ptrpcm_playback->playback_max_size, pcm_dma_tx_finish, dma_finish);
+				GdmaUnMaskChannel(GDMA_PCM_TX(0,0));		
+				ptrpcm_config->bStartPlayback = 1;
+			}
+#endif
 			//tasklet_hi_schedule(&pcm_rx_tasklet);
 			
 			break;

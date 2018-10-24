@@ -495,6 +495,7 @@ typedef struct pcm_buffer_t
 	char* pcmbuf;
 	int size;
 	int playback_max_size;
+	int record_max_size;	
 }pcm_record_type, pcm_playback_type;
 
 

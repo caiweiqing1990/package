@@ -15,8 +15,8 @@ include $(INCLUDE_DIR)/package.mk
 
 define KernelPackage/ralink_pcm
   SUBMENU:=Other modules
-  # DEPENDS:=@!LINUX_3_3
   TITLE:=Motor driver
+  DEPENDS:=+kmod-ralink_gdma
   FILES:=$(PKG_BUILD_DIR)/ralink_pcm.ko
   AUTOLOAD:=$(call AutoLoad,40,ralink_pcm,1)
   KCONFIG:=

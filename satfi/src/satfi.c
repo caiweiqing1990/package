@@ -8809,7 +8809,7 @@ static void *recvfrom_app_voice_udp(void *p)
 	satfi_log("select_voice_udp %d", sock);
 	pcm_playback_type playback;
 	playback.pcmbuf = voicebuf;
-	playback.playback_max_size = 4000;
+	playback.playback_max_size = 8000;
 	while (1)
     {
 		FD_ZERO(&fds);/* 每次循环都需要清空 */
