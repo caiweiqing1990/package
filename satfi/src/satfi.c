@@ -23,6 +23,11 @@
 #include <sys/prctl.h>
 #include <linux/sockios.h>
 #include <iconv.h>
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+#include <speex/speex.h>
+#include "speex/speex_preprocess.h"
 
 #include"log.h"
 #include "timer.h"
@@ -2324,7 +2329,6 @@ short get_sat_dailstatus()
 {
   short status = 0;
   //sat_lock();
-  //if(base.sat.sat_calling == 1 && base.sat.sat_state_phone == SAT_STATE_PHONE_IDLE) status = 2;
   if(base.sat.sat_state_phone == SAT_STATE_PHONE_IDLE) status = 0;
   else if(base.sat.sat_state_phone == SAT_STATE_PHONE_ONLINE) status = 1;
   else if(base.sat.sat_state_phone == SAT_STATE_PHONE_DIALING ||
@@ -3719,7 +3723,7 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 				add_user(req->MsID, socket, req->Count, req->FamiliarityNumber);
 			}
 
-			if(base.sat.sat_state_phone != SAT_STATE_PHONE_IDLE && strncmp(&pack[4], base.sat.MsID, USERID_LLEN) == 0)
+			if(base.sat.sat_state_phone != SAT_STATE_PHONE_IDLE && strncmp(req->MsID, base.sat.MsID, USERID_LLEN) == 0)
 			{
 				satfi_log("update base.sat.socket = %d socket = %d", base.sat.socket, socket);
 				base.sat.socket = socket;
@@ -3989,8 +3993,6 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 			MsgAppCallUpRsp rsp;
 			rsp.header.length = sizeof(MsgAppCallUpRsp);
 			rsp.header.mclass = CALLUP_RSP;
-			rsp.result = sat_state_phone;
-			n = write(socket, &rsp, rsp.header.length);
 			if(base.sat.sat_calling == 0)
 			{
 				bzero(base.sat.MsID,sizeof(base.sat.MsID));
@@ -4024,6 +4026,13 @@ int handle_app_msg_tcp(int socket, char *pack, char *tscbuf)
 				strncpy(base.sat.calling_number, &pack[4],sizeof(base.sat.called_number));
 				StartCallUp(base.sat.calling_number);
 			}
+			else
+			{
+				sat_state_phone = 7;//返回拨号失败,当前已有正在拨号
+			}
+			
+			rsp.result = sat_state_phone;			
+			n = write(socket, &rsp, rsp.header.length);
 			
 			satfi_log("CALLUP_CMD %d %d calling_number=%.32s\n", base.sat.sat_calling, base.sat.sat_state_phone, base.sat.calling_number);
 			//printf("CALLUP_CMD %d %d calling_number=%.15s\n", base.sat.sat_calling, sat_state_phone, base.sat.calling_number);
@@ -8793,7 +8802,7 @@ static void *recvfrom_app_voice_udp(void *p)
         exit(1);
     }
 
-	char voicebuf[320];
+	char voicebuf[3200];
 	struct sockaddr_in clientAddr;
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	struct sockaddr_in *clientAddr2 = &(base->sat.clientAddr2);
@@ -8815,7 +8824,20 @@ static void *recvfrom_app_voice_udp(void *p)
 	satfi_log("select_voice_udp %d", sock);
 	pcm_playback_type playback;
 	playback.pcmbuf = voicebuf;
-	playback.playback_max_size = 8000;
+	playback.playback_max_size = sizeof(voicebuf);
+
+#define NN 160
+
+	SpeexPreprocessState *st;
+	st = speex_preprocess_state_init(NN, 8000);
+
+	int vad = 1;
+	int vadProbStart = 90;
+	int vadProbContinue = 100;
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_VAD, &vad); //静音检测
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_START , &vadProbStart); //Set probability required for the VAD to go from silence to voice
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_CONTINUE, &vadProbContinue); //Set probability required for the VAD to stay in the voice state (integer percent)
+	
 	while (1)
     {
 		FD_ZERO(&fds);/* 每次循环都需要清空 */
@@ -8876,13 +8898,17 @@ static void *recvfrom_app_voice_udp(void *p)
 							}
 							else
 							{
-								if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
+								//if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
 								{
 									//satfi_log("pcmfd=%d %d %s %d", pcmfd, n, inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-									if(pcmfd > 0)
+									vad = speex_preprocess_run(st, (spx_int16_t *)voicebuf);
+									if(vad)
 									{
-										playback.size = n;
-										ioctl(pcmfd, PCM_WRITE_PCM, &playback);
+										if(pcmfd > 0)
+										{
+											playback.size = n;
+											ioctl(pcmfd, PCM_WRITE_PCM, &playback);
+										}										
 									}
 								}
 							}
@@ -8930,13 +8956,27 @@ static void *sendto_app_voice_udp(void *p)
 	int size = 320;
 	int ret;
 	
-	char voicebuf[4000];
+	char voicebuf[3200];
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	int len = sizeof(struct sockaddr_in);
 	pcm_record_type record;
 	record.pcmbuf = voicebuf;
 	record.size = sizeof(voicebuf);
+
+#define NN 160
 	
+	SpeexPreprocessState *st;
+	st = speex_preprocess_state_init(NN, 8000);
+
+	int vad = 1;
+	int vadProbStart = 90;
+	int vadProbContinue = 100;
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_VAD, &vad); //静音检测
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_START , &vadProbStart); //Set probability required for the VAD to go from silence to voice
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_CONTINUE, &vadProbContinue); //Set probability required for the VAD to stay in the voice state (integer percent)
+
+	//FILE *fout= fopen("sendtoapp.raw", "w");
+
 	while(1)
 	{
 		//satfi_log("%d %d %d %d\n", AudioRecordFd, app_socket_voice, base->sat.sat_calling, base->sat.sat_state_phone);
@@ -8975,7 +9015,7 @@ static void *sendto_app_voice_udp(void *p)
 					if(record.size > 0 && ntohs(clientAddr1->sin_port) != 0)
 					{
 						int offset = 0;
-						int size = 160;
+						int size = 320;
 						while(offset != record.size)
 						{
 							if(base->sat.sat_state_phone == SAT_STATE_PHONE_ATH_W)
@@ -8983,15 +9023,20 @@ static void *sendto_app_voice_udp(void *p)
 								satfi_log("SAT_STATE_PHONE_ATH_W BREAK\n");
 								break;
 							}
-							
-							ret = sendto(base->sat.voice_socket_udp, &(record.pcmbuf[offset]), size, 0, (struct sockaddr *)clientAddr1, len);
-							if (ret < 0)
+
+							vad = speex_preprocess_run(st, (spx_int16_t *)&(record.pcmbuf[offset]));
+							if(vad)
 							{
-								satfi_log("sendto clientAddr11 %s", strerror(errno));
-							}
-							else
-							{
-								//satfi_log("send_app pcmfd=%d %d %s %d", ret, record.size, inet_ntoa(clientAddr1->sin_addr), ntohs(clientAddr1->sin_port));
+								//fwrite(&(record.pcmbuf[offset]), sizeof(short), NN, fout);
+								ret = sendto(base->sat.voice_socket_udp, &(record.pcmbuf[offset]), size, 0, (struct sockaddr *)clientAddr1, len);
+								if (ret < 0)
+								{
+									satfi_log("sendto clientAddr11 %s", strerror(errno));
+								}
+								else
+								{
+									//satfi_log("send_app pcmfd=%d %d %s %d", ret, record.size, inet_ntoa(clientAddr1->sin_addr), ntohs(clientAddr1->sin_port));
+								}
 							}
 
 							offset += size;

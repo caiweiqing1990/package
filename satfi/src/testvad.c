@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 	st = speex_preprocess_state_init(NN, 8000);
 
 	int vad = 1;
-	int vadProbStart = 80;
+	int vadProbStart = 90;
 	int vadProbContinue = 100;
 	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_VAD, &vad); //静音检测
 	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_START , &vadProbStart); //Set probability required for the VAD to go from silence to voice
