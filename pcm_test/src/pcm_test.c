@@ -28,7 +28,6 @@
 
 #define PCM_PAGE_SIZE			8000
 
-
 typedef struct pcm_buffer_t
 {
 	char* pcmbuf;
@@ -36,100 +35,63 @@ typedef struct pcm_buffer_t
 	int playback_max_size;
 }pcm_record_type, pcm_playback_type;
 
-
 int main(int argc, char **argv)
-{
-	int i;
-	int fd;
-	int fdr;
-	int fdw;
-	int ret;
-	int iRecordCH=0;
-	long codec_type[2] = {iRecordCH, G711ULAW_CODEC};
-	
-	pcm_record_type record;
-	
- 	if (argc != 4)
+{		
+ 	if (argc != 3)
 	{
-		printf("%s /dev/pcm0 test.wav maxsize\n", argv[0]);
+		printf("%s test.raw maxsize\n", argv[0]);
 		return -1;
 	}
 
-	fd = open(argv[1], O_RDWR);
-	if (fd < 0)
+	char voicebuf[64000];
+	int pcmfd=-1;
+	int ret;
+	
+	pcm_playback_type playback;
+	playback.pcmbuf = voicebuf;
+	playback.playback_max_size = atoi(argv[2]);
+
+	int iRecordCH=0;
+	pcmfd = open("/dev/pcm0", O_RDWR);
+	ioctl(pcmfd, PCM_OPEN, &ret);
+	printf("PCM_OPEN=%d %d\n", ret, playback.playback_max_size);
+	if (ret < 0)
+	{
+		ioctl(pcmfd, PCM_CLOSE);
+		return NULL;
+	}
+	ioctl(pcmfd, PCM_SET_PLAYBACK, &iRecordCH);
+	ioctl(pcmfd, PCM_SET_RECORD, &iRecordCH);
+	ioctl(pcmfd, PCM_START, 0);
+	
+	int fdr = open(argv[1], O_RDWR);
+	if (fdr < 0)
 	{
 		printf("can't open %s\n", argv[1]);
 		return -1;
 	}
 	
-	fdr = open(argv[2], O_RDWR);
-	if (fdr < 0)
-	{
-		printf("can't open %s\n", argv[2]);
-		return -1;
-	}
-	
-	//fdw = open(argv[3], O_RDWR|O_CREAT);
-	//if (fdw < 0)
-	//{
-	//	printf("can't open %s\n", argv[3]);
-	//	return -1;
-	//}
-	
-	ioctl(fd, PCM_OPEN, &ret);
-	printf("PCM_OPEN=%d\n", ret);
-	if (ret < 0)
-	{
-		ioctl(fd, PCM_CLOSE);
-		return -1;
-	}
-	ioctl(fd, PCM_SET_PLAYBACK, &iRecordCH);
-	ioctl(fd, PCM_SET_RECORD, &iRecordCH);
-	
-	ioctl(fd, PCM_SET_CODEC_TYPE, codec_type);
-	
-	ioctl(fd, PCM_START, 0);
-	
-	record.pcmbuf = malloc(PCM_PAGE_SIZE);
-	record.size = 320;
-	record.playback_max_size = PCM_PAGE_SIZE;
-	if(record.pcmbuf == NULL)
-	{
-		printf("can't malloc for record\n");
-		ioctl(fd, PCM_STOP, 0);
-		ioctl(fd, PCM_SET_UNPLAYBACK);
-		ioctl(fd, PCM_SET_UNRECORD);
-		
-		ioctl(fd, PCM_CLOSE);
-		return -1;		
-	}
-	
-	int offset=0;
 	while(1)
 	{
 		//printf("readfdr=%d\n", record.size);
-		//ret = read(fdr, record.pcmbuf, PCM_PAGE_SIZE);
-		//printf("readfdr=%d\n", ret);
-		ioctl(fd, PCM_READ_PCM, &record);
-		offset+=record.size;
-		usleep(20000);
-		if(offset >= PCM_PAGE_SIZE)
+		ret=read(fdr, voicebuf, 320);
+		if(ret != 320)
 		{
 			break;
 		}
+		//usleep(13000);
+		playback.size = ret;
+		ioctl(pcmfd, PCM_WRITE_PCM, &playback);
 	}
 
 	//sleep(5);
 	printf("quit\n");		
-	ioctl(fd, PCM_STOP, 0);
-	ioctl(fd, PCM_SET_UNPLAYBACK);
-	ioctl(fd, PCM_SET_UNRECORD);
+	ioctl(pcmfd, PCM_STOP, 0);
+	ioctl(pcmfd, PCM_SET_UNPLAYBACK);
+	ioctl(pcmfd, PCM_SET_UNRECORD);
+	ioctl(pcmfd, PCM_CLOSE);
 	
-	ioctl(fd, PCM_CLOSE);
-	close(fd);
 	close(fdr);
-	close(fdw);
-	free(record.pcmbuf);
 	
 	return 0; 	
 }

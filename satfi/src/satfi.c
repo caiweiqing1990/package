@@ -3096,8 +3096,8 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 							else
 							{
 								satfi_log("%s %d\n",data, __LINE__);
-								base.sat.sat_state = SAT_STATE_RESTART;
-								base.sat.sat_status = 0;								
+								base.sat.sat_state = SAT_STATE_CREG;
+								//base.sat.sat_status = 0;								
 							}
 						}
 						
@@ -8898,7 +8898,7 @@ static void *recvfrom_app_voice_udp(void *p)
 							}
 							else
 							{
-								//if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
+								if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
 								{
 									//satfi_log("pcmfd=%d %d %s %d", pcmfd, n, inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 									vad = speex_preprocess_run(st, (spx_int16_t *)voicebuf);
