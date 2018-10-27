@@ -1792,6 +1792,7 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 				ptrpcm_config->bStartPlayback = 1;
 				ptrpcm_config->data_offset_t = 0;
 				size = 0;
+				memset(ptrpcm_config->mmapbuf_t, 0, ptrpcm_playback->playback_max_size);
 			}
 			else if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size && size == 0)
 			{
@@ -1806,6 +1807,7 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 				GdmaUnMaskChannel(GDMA_PCM_TX(0,0));
 				size = ptrpcm_config->data_offset_t;
 				ptrpcm_config->bStartPlayback = 1;
+				memset(ptrpcm_config->mmapbuf_t+size, 0, ptrpcm_playback->playback_max_size);
 			}
 #else
 			if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size)
