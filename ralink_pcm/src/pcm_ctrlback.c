@@ -30,85 +30,6 @@ extern void SLIC_reset(int reset);
 extern int SPI_cfg(int id);
 #endif
 
-static DECLARE_WAIT_QUEUE_HEAD(dma_waitq_r);
-/* 中断事件标志, 中断服务程序将它置1，ioctl将它清0 */
-static volatile int ev_dma_r = 1;
-
-static DECLARE_WAIT_QUEUE_HEAD(dma_waitq_t);
-/* 中断事件标志, 中断服务程序将它置1，ioctl将它清0 */
-static volatile int ev_dma_t = 1;
-
-#define PCM_BUF_SIZE	(64*1024)
-
-#define PLAYBACK_PERIOD_SIZE	3200
-#define PLAYBACK_BUF_SIZE 		(4*PLAYBACK_PERIOD_SIZE)
-char *playbackbuf=NULL;
-int playbackr=0;
-int playbackw=0;
-int isplaybackStart=0;
-
-#define RECORD_PERIOD_SIZE	4800
-#define RECORD_BUF_SIZE 	(4*RECORD_PERIOD_SIZE)
-char *recordbuf=NULL;
-int recordr=0;
-int recordw=0;
-int isrecordStart=0;
-
-static int is_playbackbuf_full(void)
-{
-	return ((playbackw + PLAYBACK_PERIOD_SIZE)% PLAYBACK_BUF_SIZE == playbackr);
-}
-
-static int is_playbackbuf_empty(void)
-{
-	return (playbackr == playbackw);
-}
-
-static void setplayback(void)
-{
-	playbackr = playbackw = isplaybackStart = 0;
-}
-
-void stopplayback(void)
-{
-	printk("stopplayback playbackr=%d playbackw=%d isplaybackStart=%d\n", playbackr, playbackw, isplaybackStart);
-	isplaybackStart = 0;
-	if(!is_playbackbuf_empty())
-	{
-		printk("stopplayback %d %d %d\n", playbackr, playbackw, isplaybackStart);
-		//ev_dma_t = 0;
-		//wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠
-		printk("stopplayback ffinish\n");
-	}
-}
-
-static int is_recordbuf_full(void)
-{
-	return ((recordw + RECORD_PERIOD_SIZE)% RECORD_BUF_SIZE == recordr);
-}
-
-static int is_recordbuf_empty(void)
-{
-	return (recordr == recordw);
-}
-
-static void setrecord(void)
-{
-	recordr = recordw = isrecordStart = 0;
-}
-
-static void stoprecord(void)
-{
-	printk("stoprecord recordr=%d recordw=%d isrecordStart=%d\n", recordr, recordw, isrecordStart);
-	if(isrecordStart == 1)
-	{
-		isrecordStart = 0;
-		ev_dma_r = 0;
-		wait_event_interruptible(dma_waitq_r, ev_dma_r);//休眠
-		printk("stoprecord ffinish\n");
-	}
-}
-
 pcm_config_type* ppcm_config;
 pcm_status_type* ppcm_status;
 
@@ -189,6 +110,14 @@ unsigned int slic_type = 32261;
 unsigned int idiv = CONFIG_RALINK_PCMINTDIV, cdiv=CONFIG_RALINK_PCMCOMPDIV, smode=CONFIG_RALINK_PCMSLOTMODE;
 codec_data_type codec_obj[MAX_CODEC_CH];
 
+static DECLARE_WAIT_QUEUE_HEAD(dma_waitq_r);
+/* 中断事件标志, 中断服务程序将它置1，ioctl将它清0 */
+static volatile int ev_dma_r = 0;
+
+static DECLARE_WAIT_QUEUE_HEAD(dma_waitq_t);
+/* 中断事件标志, 中断服务程序将它置1，ioctl将它清0 */
+static volatile int ev_dma_t = 0;
+#define PCM_BUF_SIZE	(64*1024)
 int __init pcm_init(void)
 {
 	u32	data;
@@ -225,20 +154,17 @@ int __init pcm_init(void)
 	MSG("PCM slot mode is %d\n", smode);
 		
 	pcm_open();
-	ppcm_config->mmapbuf_r = kmalloc(RECORD_BUF_SIZE, GFP_KERNEL);
+	ppcm_config->mmapbuf_r = kmalloc(PCM_BUF_SIZE, GFP_KERNEL);
 	if(ppcm_config->mmapbuf_r==NULL)
 	{
 		return -1;
 	}
-	recordbuf = ppcm_config->mmapbuf_r;
 	
-	ppcm_config->mmapbuf_t = kmalloc(PLAYBACK_BUF_SIZE, GFP_KERNEL);
+	ppcm_config->mmapbuf_t = kmalloc(PCM_BUF_SIZE, GFP_KERNEL);
 	if(ppcm_config->mmapbuf_t==NULL)
 	{
 		return -1;
 	}
-	playbackbuf = ppcm_config->mmapbuf_t;
-	
 	init_waitqueue_head(&(ppcm_config->pcm_qh));
 	init_waitqueue_head(&(ppcm_config->pcm_qh));
 	return 0;
@@ -705,37 +631,17 @@ int pcm_disable(unsigned int chid, pcm_config_type* ptrpcm_config)
 
 void dma_finish(u32 dma_ch)
 {
-	//printk("dma_finish %d %d %d %d\n", playbackr, playbackw, dma_ch, ev_dma_t);
+	//printk("dma_finish[%d]\n", dma_ch);
 }
 
 void pcm_dma_tx_finish(u32 dma_ch)
 {
-	playbackr = (playbackr + PLAYBACK_PERIOD_SIZE) % PLAYBACK_BUF_SIZE;
-	//printk("pcm_dma_tx_finish %d %d %d %d\n", playbackr, playbackw, dma_ch, ev_dma_t);
-
-	if(isplaybackStart == 1)
-	{
-		if(!is_playbackbuf_empty())
-		{
-			//printk("GdmaPcmTx %d %d %d %d\n", playbackr, playbackw, dma_ch, ev_dma_t);
-			GdmaPcmTx((u32)(playbackbuf+playbackr), (u32)PCM_CH_FIFO(0), 0, 0, PLAYBACK_PERIOD_SIZE, pcm_dma_tx_finish, dma_finish);
-			GdmaUnMaskChannel(GDMA_PCM_TX(0,0));
-		}
-		else
-		{
-			//printk("playbackbuf_empty %d %d %d %d\n", playbackr, playbackw, dma_ch, ev_dma_t);
-			isplaybackStart=0;
-		}
-	}
-
-	if(ev_dma_t == 0)
-	{
-		//printk("pcm_dma_tx_finish wake_up_interruptible %d\n", isplaybackStart);
-		ev_dma_t = 1;
-		wake_up_interruptible(&dma_waitq_t);/* 唤醒休眠的进程 */
-	}
+	//printk("pcm_dma_tx_finish[%d]\n", dma_ch);
+	ev_dma_t = 1;
+	wake_up_interruptible(&dma_waitq_t);	 /* 唤醒休眠的进程 */
+	ppcm_config->bStartPlayback = 0;
+	//ppcm_config->data_offset_t=0;
 }
-
 
 void pcm_dma_tx_isr(u32 dma_ch)
 {
@@ -811,30 +717,11 @@ void pcm_dma_tx_isr(u32 dma_ch)
 
 void pcm_dma_rx_finish(u32 dma_ch)
 {
-	//printk("pcm_dma_rx_finish[%d]\n", dma_ch);//dma_ch=4	
-	recordw = (recordw + RECORD_PERIOD_SIZE) % RECORD_BUF_SIZE;
-
-	if(isrecordStart)
-	{
-		if(is_recordbuf_full())
-		{
-			//printk("recordbuf_full\n");
-			recordr = (recordr + RECORD_PERIOD_SIZE) % RECORD_BUF_SIZE;
-		}
-		
-		//printk("GdmaPcmRx %d %d %d %d\n", recordr, recordw, dma_ch, ev_dma_r);
-		GdmaPcmRx((u32)PCM_CH_FIFO(0), (u32)recordbuf+recordw, 0, 0, RECORD_PERIOD_SIZE, pcm_dma_rx_finish, dma_finish);
-		GdmaUnMaskChannel(GDMA_PCM_RX(0,0));
-	}
-
-	if(ev_dma_r == 0)
-	{
-		//printk("pcm_dma_rx_finish wake_up_interruptible\n");
-		ev_dma_r = 1;
-		wake_up_interruptible(&dma_waitq_r);/* 唤醒休眠的进程 */
-	}
+	//MSG("pcm_dma_rx_finish[%d]\n", dma_ch);
+	ev_dma_r = 1;
+	wake_up_interruptible(&dma_waitq_r);	 /* 唤醒休眠的进程 */
+	ppcm_config->bStartRecord = 0;
 }
-
 
 void pcm_dma_rx_isr(u32 dma_ch)
 {
@@ -1802,7 +1689,6 @@ static void slic_ramwait (unsigned char ch)
 	}
 }
 
-
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,35)
 int pcm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #else
@@ -1846,7 +1732,6 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			ptrpcm_config->data_offset_r = 0;
 			ptrpcm_config->bStartRecord = 0;
 			ptrpcm_config->iRecordCH = arg;
-			setrecord();
 			break;
 		case PCM_SET_UNRECORD:
 			MSG("iocmd=PCM_SET_UNRECORD\n");
@@ -1863,7 +1748,6 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			ptrpcm_config->bStartPlayback = 0;
 			ptrpcm_config->iPlaybackCH = arg;
 			ptrpcm_config->data_offset_t = 0;
-			setplayback();
 			break;
 		case PCM_SET_UNPLAYBACK:
 			MSG("iocmd=PCM_SET_UNPLAYBACK\n");
@@ -1873,43 +1757,81 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			ptrpcm_config->iPlaybackCH = -1;
 			break;
 		case PCM_READ_PCM:
-			//ptrpcm_record = (pcm_record_type*)arg;
-			if(is_recordbuf_empty())
-			{
-				//printk("recordbuf_empty %d\n", isrecordStart);
-				if(isrecordStart == 0)
-				{
-					printk("start GdmaPcmRx %d %d\n", recordr, recordw);
-					GdmaPcmRx((u32)PCM_CH_FIFO(0), (u32)recordbuf+recordw, 0, 0, RECORD_PERIOD_SIZE, pcm_dma_rx_finish, dma_finish);
-					GdmaUnMaskChannel(GDMA_PCM_RX(0,0));
-					isrecordStart = 1;
-				}
-			
-				ev_dma_r = 0;
-				wait_event_interruptible(dma_waitq_r, ev_dma_r);//休眠		
-			}
-			copy_to_user(arg, recordbuf+recordr, RECORD_PERIOD_SIZE);
-			recordr = (recordr + RECORD_PERIOD_SIZE) % RECORD_BUF_SIZE;
+			ptrpcm_record = (pcm_record_type*)arg;
+			if(ptrpcm_config->nch_active <= 0)
+				return -1;
+			//使用DMA Channel4从PCM0_FIFO读取数据，接收大小为ptrpcm_record->size，最大65535，读取完毕产生中断调用pcm_dma_rx_finish，唤醒进程			
+			GdmaPcmRx((u32)PCM_CH_FIFO(0), (u32)ptrpcm_config->mmapbuf_r, 0, 0, ptrpcm_record->size, pcm_dma_rx_finish, dma_finish);
+			GdmaUnMaskChannel(GDMA_PCM_RX(0,0));
+			ev_dma_r = 0;
+			ptrpcm_config->bStartRecord = 1;
+			wait_event_interruptible(dma_waitq_r, ev_dma_r);//休眠				
+			copy_to_user(ptrpcm_record->pcmbuf, ptrpcm_config->mmapbuf_r, ptrpcm_record->size);
 			break;
 		case PCM_WRITE_PCM:
-			//ptrpcm_playback = arg;
-			if(is_playbackbuf_full())
+			ptrpcm_playback = arg;
+			if(ptrpcm_config->nch_active <= 0)
+				return -1;
+			//使用DMA Channel6向PCM0_FIFO发送数据，发送大小为ptrpcm_record->size，最大65535，并且等待发送完毕,并调用pcm_dma_tx_finish，唤醒进程
+			//printk("%d %d\n",ptrpcm_config->data_offset_t, ptrpcm_playback->size);
+#if 1			
+			copy_from_user(ptrpcm_config->mmapbuf_t + ptrpcm_config->data_offset_t, ptrpcm_playback->pcmbuf, ptrpcm_playback->size);
+			ptrpcm_config->data_offset_t += ptrpcm_playback->size;
+
+			if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size * 2 && size != 0)
 			{
-				//printk("playbackbuf_full\n");
-				ev_dma_t = 0;
-				wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠		
-			}
-			
-			copy_from_user(playbackbuf+playbackw, arg, PLAYBACK_PERIOD_SIZE);
-			playbackw = (playbackw + PLAYBACK_PERIOD_SIZE) % PLAYBACK_BUF_SIZE;
-			
-			if(isplaybackStart == 0)
-			{
-				printk("start GdmaPcmTx %d %d\n", playbackr, playbackw);
-				GdmaPcmTx((u32)(playbackbuf+playbackr), (u32)PCM_CH_FIFO(0), 0, 0, PLAYBACK_PERIOD_SIZE, pcm_dma_tx_finish, dma_finish);
+				//MSG("ptrpcm_config->data_offset_t-size=%d %d\n", ptrpcm_config->data_offset_t - size, ptrpcm_config->bStartPlayback);
+				if(ptrpcm_config->bStartPlayback == 1)
+				{
+					//printk("wait_event_interruptible1\n");
+					ev_dma_t = 0;
+					wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠
+				}
+				GdmaPcmTx((u32)(ptrpcm_config->mmapbuf_t+size), (u32)PCM_CH_FIFO(0), 0, 0, ptrpcm_config->data_offset_t-size, pcm_dma_tx_finish, dma_finish);
 				GdmaUnMaskChannel(GDMA_PCM_TX(0,0));
-				isplaybackStart = 1;
+				ptrpcm_config->bStartPlayback = 1;
+				ptrpcm_config->data_offset_t = 0;
+				size = 0;
+				memset(ptrpcm_config->mmapbuf_t, 0, ptrpcm_playback->playback_max_size);
 			}
+			else if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size && size == 0)
+			{
+				//MSG("ptrpcm_config->data_offset_t=%d %d\n", ptrpcm_config->data_offset_t, ptrpcm_config->bStartPlayback);
+				if(ptrpcm_config->bStartPlayback == 1)
+				{
+					//printk("wait_event_interruptible2\n");
+					ev_dma_t = 0;
+					wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠
+				}
+				GdmaPcmTx((u32)ptrpcm_config->mmapbuf_t, (u32)PCM_CH_FIFO(0), 0, 0, ptrpcm_config->data_offset_t, pcm_dma_tx_finish, dma_finish);
+				GdmaUnMaskChannel(GDMA_PCM_TX(0,0));
+				size = ptrpcm_config->data_offset_t;
+				ptrpcm_config->bStartPlayback = 1;
+				memset(ptrpcm_config->mmapbuf_t+size, 0, ptrpcm_playback->playback_max_size);
+			}
+#else
+			if(ptrpcm_config->data_offset_t >= ptrpcm_playback->playback_max_size)
+			{
+				if(ptrpcm_config->bStartPlayback == 1)
+				{
+					ev_dma_t = 0;
+					wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠	
+				}
+			}
+
+			copy_from_user(ptrpcm_config->mmapbuf_t + ptrpcm_config->data_offset_t, ptrpcm_playback->pcmbuf, ptrpcm_playback->size);
+			ptrpcm_config->data_offset_t += ptrpcm_playback->size;
+
+			if(ptrpcm_config->bStartPlayback == 0)
+			{
+				memset(ptrpcm_config->mmapbuf_t, 0, ptrpcm_playback->playback_max_size);
+				GdmaPcmTx((u32)ptrpcm_config->mmapbuf_t, (u32)PCM_CH_FIFO(0), 0, 0, ptrpcm_playback->playback_max_size, pcm_dma_tx_finish, dma_finish);
+				GdmaUnMaskChannel(GDMA_PCM_TX(0,0));		
+				ptrpcm_config->bStartPlayback = 1;
+			}
+#endif
+			//tasklet_hi_schedule(&pcm_rx_tasklet);
+			
 			break;
 		case PCM_PUTDATA:
 			PCM_UserPutData_Hook(0,(short* )arg);
@@ -2028,8 +1950,20 @@ int pcm_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned
 			pcm_dump_reg();			
 			break;
 		case PCM_STOP:
-			stopplayback();
-			stoprecord();
+			if(ptrpcm_config->bStartPlayback == 1)
+			{
+				MSG("iocmd=PCM_STOP bStartPlayback=%d %d %d\n",ptrpcm_config->bStartPlayback, ptrpcm_config->data_offset_t, size);
+				ev_dma_t = 0;
+				wait_event_interruptible(dma_waitq_t, ev_dma_t);//休眠
+			}
+			
+			if(ptrpcm_config->bStartRecord == 1)
+			{
+				MSG("iocmd=PCM_STOP bStartRecord=%d %d\n",ptrpcm_config->bStartRecord, ptrpcm_config->data_offset_r);
+				ev_dma_r = 0;
+				wait_event_interruptible(dma_waitq_r, ev_dma_r);//休眠
+			}
+
 			spin_lock_irqsave(&ptrpcm_config->lock, flags);
 			
 			/* disable system interrupt for PCM */

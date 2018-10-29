@@ -74,8 +74,8 @@ int main(int argc, char **argv)
 	while(1)
 	{
 		//printf("readfdr=%d\n", record.size);
-		ret=read(fdr, voicebuf, 320);
-		if(ret != 320)
+		ret=read(fdr, voicebuf, playback.playback_max_size);
+		if(ret != playback.playback_max_size)
 		{
 			break;
 		}
@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 		ioctl(pcmfd, PCM_WRITE_PCM, &playback);
 	}
 
-	//sleep(5);
+	sleep(5);
 	printf("quit\n");		
 	ioctl(pcmfd, PCM_STOP, 0);
 	ioctl(pcmfd, PCM_SET_UNPLAYBACK);

@@ -759,7 +759,7 @@ irqreturn_t GdmaIrqHandler(
 	if(GdmaUnMaskStatus & (0x1 << (UNMASK_INT_STATUS(Ch))) ) {
 	    if(GdmaUnMaskIntCallback[Ch] != NULL) {
 		GdmaUnMaskIntCallback[Ch](Ch);
-	       printk("GdmaUnMaskIntCallback %d\n",Ch);	
+	       //printk("GdmaUnMaskIntCallback %d\n",Ch);	
 	    }
 	}
      }	

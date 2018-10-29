@@ -8802,7 +8802,9 @@ static void *recvfrom_app_voice_udp(void *p)
         exit(1);
     }
 
-	char voicebuf[3200];
+	char tmp[320];
+	char playbackbuf[3200];
+	int plybackbufofs=0;
 	struct sockaddr_in clientAddr;
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	struct sockaddr_in *clientAddr2 = &(base->sat.clientAddr2);
@@ -8822,10 +8824,6 @@ static void *recvfrom_app_voice_udp(void *p)
 	int ret;
 
 	satfi_log("select_voice_udp %d", sock);
-	pcm_playback_type playback;
-	playback.pcmbuf = voicebuf;
-	playback.playback_max_size = sizeof(voicebuf);
-
 #define NN 160
 
 	SpeexPreprocessState *st;
@@ -8878,7 +8876,7 @@ static void *recvfrom_app_voice_udp(void *p)
 								
 				if(FD_ISSET(sock, &fds))
 				{
-			        n = recvfrom(sock, voicebuf, 320, 0, (struct sockaddr*)&clientAddr, &len);
+			        n = recvfrom(sock, tmp, 320, 0, (struct sockaddr*)&clientAddr, &len);
 			        if (n>0 && base->sat.sat_calling == 1)
 			        {
 						if(memcmp(clientAddr1 ,&clientAddr, len) == 0)
@@ -8889,7 +8887,7 @@ static void *recvfrom_app_voice_udp(void *p)
 							{
 								if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
 								{
-									n = sendto(sock, voicebuf, n, 0, (struct sockaddr *)clientAddr2, len);
+									n = sendto(sock, tmp, n, 0, (struct sockaddr *)clientAddr2, len);
 									if (n < 0)
 									{
 										perror("sendto clientAddr2");
@@ -8900,15 +8898,20 @@ static void *recvfrom_app_voice_udp(void *p)
 							{
 								if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
 								{
-									//satfi_log("pcmfd=%d %d %s %d", pcmfd, n, inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-									vad = speex_preprocess_run(st, (spx_int16_t *)voicebuf);
+									vad = speex_preprocess_run(st, (spx_int16_t *)tmp);
 									if(vad)
 									{
-										if(pcmfd > 0)
+										memcpy(playbackbuf+plybackbufofs, tmp, n);
+										plybackbufofs += n;
+										if(plybackbufofs >= sizeof(playbackbuf))
 										{
-											playback.size = n;
-											ioctl(pcmfd, PCM_WRITE_PCM, &playback);
-										}										
+											//satfi_log("plybackbufofs=%d", plybackbufofs);
+											plybackbufofs = 0;
+											if(pcmfd > 0)
+											{
+												ioctl(pcmfd, PCM_WRITE_PCM, playbackbuf);
+											}						
+										}
 									}
 								}
 							}
@@ -8919,7 +8922,7 @@ static void *recvfrom_app_voice_udp(void *p)
 							{
 								//gettimeofday(&tv, NULL);
 								//satfi_log(" 								   %s %d %06d %d",inet_ntoa(clientAddr2->sin_addr) ,tv.tv_sec, tv.tv_usec, n);
-								n = sendto(sock, voicebuf, n, 0, (struct sockaddr *)clientAddr1, len);
+								n = sendto(sock, tmp, n, 0, (struct sockaddr *)clientAddr1, len);
 								if (n < 0)
 								{
 									perror("sendto clientAddr1");
@@ -8956,12 +8959,9 @@ static void *sendto_app_voice_udp(void *p)
 	int size = 320;
 	int ret;
 	
-	char voicebuf[3200];
+	char voicebuf[4800];
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	int len = sizeof(struct sockaddr_in);
-	pcm_record_type record;
-	record.pcmbuf = voicebuf;
-	record.size = sizeof(voicebuf);
 
 #define NN 160
 	
@@ -9011,12 +9011,12 @@ static void *sendto_app_voice_udp(void *p)
 			{	
 				if(pcmfd>0)
 				{
-					ioctl(pcmfd, PCM_READ_PCM, &record);
-					if(record.size > 0 && ntohs(clientAddr1->sin_port) != 0)
+					ioctl(pcmfd, PCM_READ_PCM, voicebuf);
+					if(ntohs(clientAddr1->sin_port) != 0)
 					{
 						int offset = 0;
 						int size = 320;
-						while(offset != record.size)
+						while(offset != sizeof(voicebuf))
 						{
 							if(base->sat.sat_state_phone == SAT_STATE_PHONE_ATH_W)
 							{
@@ -9024,11 +9024,11 @@ static void *sendto_app_voice_udp(void *p)
 								break;
 							}
 
-							vad = speex_preprocess_run(st, (spx_int16_t *)&(record.pcmbuf[offset]));
+							vad = speex_preprocess_run(st, (spx_int16_t *)&(voicebuf[offset]));
 							if(vad)
 							{
 								//fwrite(&(record.pcmbuf[offset]), sizeof(short), NN, fout);
-								ret = sendto(base->sat.voice_socket_udp, &(record.pcmbuf[offset]), size, 0, (struct sockaddr *)clientAddr1, len);
+								ret = sendto(base->sat.voice_socket_udp, &(voicebuf[offset]), size, 0, (struct sockaddr *)clientAddr1, len);
 								if (ret < 0)
 								{
 									satfi_log("sendto clientAddr11 %s", strerror(errno));
