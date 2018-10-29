@@ -11,8 +11,6 @@
 #include <linux/ioctl.h>
 #include <asm/rt2880/rt_mmap.h>
 
-#include "./codec_lib/codec_api.h"
-
 #define PCM_MOD_VERSION 			"1.0"
 
 #if defined (CONFIG_RALINK_RT3352) || defined (CONFIG_RALINK_RT3883) ||\
@@ -490,16 +488,16 @@ void pcm_tx_task(unsigned long pData);
 #define PCM_SLIC_DRWRITE	32
 #define PCM_SLIC_IRWRITE	33
 
-typedef struct pcm_buffer_t
-{
-	char* pcmbuf;
-	int size;
-	int playback_max_size;
-	int record_max_size;	
-}pcm_record_type, pcm_playback_type;
-
-
 #define RALINK_PCM_VERSION	"v1.00"
 #define PCMDRV_DEVNAME		"pcm0"
+
+extern int pcm_clock_setup(void);
+extern int pcm_clock_enable(void);
+extern int pcm_clock_disable(void);
+extern int pcm_reg_setup(pcm_config_type* ptrpcm_config); 
+extern int pcm_enable(unsigned int chid, pcm_config_type* ptrpcm_config);
+extern int pcm_disable(unsigned int chid, pcm_config_type* ptrpcm_config);
+extern void pcm_dump_reg (void);
+
 #endif
 

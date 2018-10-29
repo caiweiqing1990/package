@@ -28,13 +28,6 @@
 
 #define PCM_PAGE_SIZE			8000
 
-typedef struct pcm_buffer_t
-{
-	char* pcmbuf;
-	int size;
-	int playback_max_size;
-}pcm_record_type, pcm_playback_type;
-
 int main(int argc, char **argv)
 {		
  	if (argc != 3)
@@ -46,15 +39,9 @@ int main(int argc, char **argv)
 	char voicebuf[64000];
 	int pcmfd=-1;
 	int ret;
-	
-	pcm_playback_type playback;
-	playback.pcmbuf = voicebuf;
-	playback.playback_max_size = atoi(argv[2]);
-
 	int iRecordCH=0;
 	pcmfd = open("/dev/pcm0", O_RDWR);
 	ioctl(pcmfd, PCM_OPEN, &ret);
-	printf("PCM_OPEN=%d %d\n", ret, playback.playback_max_size);
 	if (ret < 0)
 	{
 		ioctl(pcmfd, PCM_CLOSE);
@@ -71,17 +58,18 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	
+	int maxsize = atoi(argv[2]);
+	
 	while(1)
 	{
 		//printf("readfdr=%d\n", record.size);
-		ret=read(fdr, voicebuf, playback.playback_max_size);
-		if(ret != playback.playback_max_size)
+		ret=read(fdr, voicebuf, maxsize);
+		if(ret != maxsize)
 		{
 			break;
 		}
 		//usleep(13000);
-		playback.size = ret;
-		ioctl(pcmfd, PCM_WRITE_PCM, &playback);
+		ioctl(pcmfd, PCM_WRITE_PCM, voicebuf);
 	}
 
 	sleep(5);
