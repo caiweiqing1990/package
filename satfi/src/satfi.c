@@ -8840,8 +8840,7 @@ static void *recvfrom_app_voice_udp(void *p)
 		switch(select(maxfd+1,&fds,NULL,NULL,&tout))
 		{
 			case -1: break;
-			case  0: 
-
+			case  0:
 				if(ntohs(clientAddr1->sin_port) != 0 && ntohs(clientAddr2->sin_port) != 0)
 				{
 					base->sat.sat_state_phone = SAT_STATE_PHONE_IDLE;
@@ -8863,7 +8862,8 @@ static void *recvfrom_app_voice_udp(void *p)
 					satfi_log("bzero clientAddr2");
 					bzero(clientAddr2, len);
 				}
-				
+
+				plybackbufofs = 0;
 				break;
 			default:
 								
@@ -8874,8 +8874,6 @@ static void *recvfrom_app_voice_udp(void *p)
 			        {
 						if(memcmp(clientAddr1 ,&clientAddr, len) == 0)
 						{
-							//gettimeofday(&tv, NULL);
-							//satfi_log("%s %d %d",inet_ntoa(clientAddr1->sin_addr) ,ntohs(clientAddr.sin_port), AudioPlayFd);
 							if(ntohs(clientAddr2->sin_port) != 0)
 							{
 								if(base->sat.sat_state_phone == SAT_STATE_PHONE_ONLINE)
@@ -8906,6 +8904,10 @@ static void *recvfrom_app_voice_udp(void *p)
 											}						
 										}
 									}
+								}
+								else
+								{
+									plybackbufofs = 0;
 								}
 							}
 						}
@@ -8955,7 +8957,6 @@ static void *sendto_app_voice_udp(void *p)
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	int len = sizeof(struct sockaddr_in);
 
-	
 	SpeexPreprocessState *st;
 	st = speex_preprocess_state_init(NN, 8000);
 
