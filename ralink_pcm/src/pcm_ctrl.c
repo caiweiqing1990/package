@@ -22,18 +22,15 @@ static volatile int ev_dma_r = 1;	//record
 static DECLARE_WAIT_QUEUE_HEAD(dma_waitq_t);
 static volatile int ev_dma_t = 1;	//playback
 
-#define PERIOD_SIZE		4800
-#define PERIOD_CNT		4
-
-#define PLAYBACK_PERIOD_SIZE	PERIOD_SIZE
-#define PLAYBACK_BUF_SIZE 		(PERIOD_CNT*PLAYBACK_PERIOD_SIZE)
+#define PLAYBACK_PERIOD_SIZE	3200
+#define PLAYBACK_BUF_SIZE 		(8*PLAYBACK_PERIOD_SIZE)
 char *playbackbuf=NULL;			//playback 环形缓冲区
 int playbackr=0;				//playback	读位置
 int playbackw=0;				//playback	写位置
 int isplaybackStart=0;
 
-#define RECORD_PERIOD_SIZE		PERIOD_SIZE
-#define RECORD_BUF_SIZE 		(PERIOD_CNT*RECORD_PERIOD_SIZE)
+#define RECORD_PERIOD_SIZE		4800
+#define RECORD_BUF_SIZE 		(8*RECORD_PERIOD_SIZE)
 char *recordbuf=NULL;			//record 环形缓冲区
 int recordr=0;					//record	读位置
 int recordw=0;					//record	写位置
@@ -57,7 +54,7 @@ static void setplayback(void)
 void stopplayback(void)
 {
 	printk("stopplayback playbackr=%d playbackw=%d isplaybackStart=%d\n", playbackr, playbackw, isplaybackStart);
-	msleep(5000);//等待播放完毕
+	msleep(3000);//等待播放完毕
 	isplaybackStart = 0;
 	if(!is_playbackbuf_empty())
 	{

@@ -8772,7 +8772,6 @@ static void SignalHandler(int nSigno)
 #define PCM_OPEN				13
 #define PCM_CLOSE				14
 
-#define PERIOD_SIZE		4800
 #define NN 160
 static int pcmfd=-1;
 static void *recvfrom_app_voice_udp(void *p)
@@ -8797,7 +8796,7 @@ static void *recvfrom_app_voice_udp(void *p)
     }
 
 	char tmp[320];
-	char playbackbuf[PERIOD_SIZE];
+	char playbackbuf[3200];
 	int plybackbufofs=0;
 	struct sockaddr_in clientAddr;
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
@@ -8953,7 +8952,7 @@ static void *sendto_app_voice_udp(void *p)
 	int packsize = 320;
 	int ret;
 	
-	char voicebuf[PERIOD_SIZE];
+	char voicebuf[4800];
 	struct sockaddr_in *clientAddr1 = &(base->sat.clientAddr1);
 	int len = sizeof(struct sockaddr_in);
 
