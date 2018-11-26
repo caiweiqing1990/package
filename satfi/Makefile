@@ -42,9 +42,9 @@ define Package/satfi/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/config.ini $(1)/etc/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/sysctl.conf $(1)/etc/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/rc.local $(1)/etc/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hosts $(1)/etc/
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hosts $(1)/etc/
 	
-#	$(INSTALL_DIR) $(1)/etc/config
+	$(INSTALL_DIR) $(1)/etc/config
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/config/network $(1)/etc/config/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/config/firewall $(1)/etc/config/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/config/system $(1)/etc/config/
@@ -55,9 +55,9 @@ define Package/satfi/install
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/3g.chat $(1)/etc/chatscripts/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/sat-sm2700.chat $(1)/etc/chatscripts/
 	
-	$(INSTALL_DIR) $(1)/lib/netifd/proto
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/3g.sh $(1)/lib/netifd/proto/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/ppp.sh $(1)/lib/netifd/proto/
+#	$(INSTALL_DIR) $(1)/lib/netifd/proto
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/3g.sh $(1)/lib/netifd/proto/
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/ppp.sh $(1)/lib/netifd/proto/
 		
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/usb
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/30-gprs $(1)/etc/hotplug.d/usb/
@@ -78,8 +78,8 @@ define Package/satfi/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/satfi $(1)/etc/init.d/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/watchdog $(1)/etc/init.d/
 	
-	$(INSTALL_DIR) $(1)/$(TARGET_MODULES_DIR)/
-	$(INSTALL_BIN) $(KERNEL_BUILD_DIR)/leds_driver/leds_driver.ko $(1)/$(TARGET_MODULES_DIR)/
+#	$(INSTALL_DIR) $(1)/$(TARGET_MODULES_DIR)/
+#	$(INSTALL_BIN) $(KERNEL_BUILD_DIR)/leds_driver/leds_driver.ko $(1)/$(TARGET_MODULES_DIR)/
 endef
 
 $(eval $(call BuildPackage,satfi))

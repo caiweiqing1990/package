@@ -540,7 +540,6 @@ static int __init power_mode_init(void)
 
 	GE1_TXD2_OUT;//用于电池电量提示
 	GE1_TXD2_H;
-   
 	ENABLE_GSTAR_OUT;  	//GE1_TXCLK GPIO#29 ENABLE_GSTAR_OUT
 	ENABLE_GSTAR;	//ENABLE_GSTAR
 

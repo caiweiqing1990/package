@@ -7138,7 +7138,7 @@ static void *check_route(void *p)
 				else
 				{
 					viasatroutecanuse = 0;
-					//base->sat.sat_status = 0;
+					base->sat.sat_status = 0;
 				}
 			}
 			else
@@ -7153,7 +7153,7 @@ static void *check_route(void *p)
 						myexec(cmdUsbRouAdd, NULL, NULL);
 					}
 					viasatroutecanuse = 0;
-					//base->sat.sat_status = 0;
+					base->sat.sat_status = 0;
 					continue;
 				}
 			}
@@ -7614,12 +7614,6 @@ void *SystemServer(void *p)
 	int GpsSendInterval = GPS_INTERVAL;
 
 	int msg_send_timeout=0;
-	
-	if(!isFileExists("/dev/leds_driver"))
-	{
-		myexec("insmod lib/modules/leds_driver.ko", NULL, NULL);	
-		seconds_sleep(1);
-	}
 
 	while(1)
 	{
@@ -7661,24 +7655,8 @@ void *SystemServer(void *p)
 				}
 			}
 		}
-
-		if(VoltageVal > 0 && VoltageVal < VOLTAGE_WARNING_ADC_VAL)//ad值低，led闪烁
-		{
-			int fd = open("/dev/leds_driver",O_RDWR | O_NONBLOCK);
-			if(fd  > 0)
-			{
-				ioctl(fd, GE1_TXD2_ON);
-				milliseconds_sleep(500);
-				ioctl(fd, GE1_TXD2_OFF);
-				milliseconds_sleep(500);
-			}
-			close(fd);
-		}
-		else
-		{
-			seconds_sleep(1);
-		}
 		
+		seconds_sleep(1);
 		HeartBeat(base);
 		udpVoiceHeartBeat(base);
 		SendPackToTSC();//处理消息发送到服务器的优先级别，优先发送指令，对讲数据，消息，语音，图片
@@ -9143,7 +9121,7 @@ int main_fork(void)
 	
 	//处理服务器,APP数据
 	if(pthread_create(&id_1, NULL, select_app, (void *)&base) == -1) exit(1);
-	if(pthread_create(&id_2, NULL, select_tsc, (void *)&base) == -1) exit(1);
+	//if(pthread_create(&id_2, NULL, select_tsc, (void *)&base) == -1) exit(1);
 
 	//切换路由
 	if(pthread_create(&id_3, NULL, check_route, (void *)&base) == -1) exit(1);
@@ -9169,17 +9147,411 @@ int main_fork(void)
 	return 0;
 }
 
+#define RECORD				0
+#define PLAYBACK			1
+
+#define ROUTE				"br-lan2"
+
+#define CARD1				"/dev/dsp"
+#define MCAST_ADDR_CARD1	"224.0.0.56"
+#define MCAST_PORT_CARD1	6789
+
+#define CARD2				"/dev/dsp1"
+#define MCAST_ADDR_CARD2	"224.0.0.78"
+#define MCAST_PORT_CARD2	9876
+
+#define MCAST_LOOP			0		//广播回环 0禁用
+
+#define RATE				8000
+#define BITS				16
+#define CHANNELS			1
+
+int broadcast_init(char *broadcastip, int broadcastport)
+{
+	int s; 								/*套接字文件描述符*/
+	struct sockaddr_in local_addr; 		/*本地地址*/
+	int err = -1;
+	s = socket(AF_INET, SOCK_DGRAM, 0); /*建立套接字*/
+	if (s == -1)
+	{
+		satfi_log("socket() error");
+		return -1;
+	}
+	
+	/*初始化地址*/
+	memset(&local_addr, 0, sizeof(local_addr));
+	local_addr.sin_family 		= AF_INET;
+	local_addr.sin_addr.s_addr 	= htonl(INADDR_ANY);
+	local_addr.sin_port 		= htons(broadcastport);
+	/*绑定socket*/
+	err = bind(s, (struct sockaddr*)&local_addr, sizeof(local_addr));
+	if(err < 0)
+	{
+		satfi_log("binderror %s %d", broadcastip, broadcastport);
+		return -1;
+	}
+	
+	/*设置回环许可*/
+	int loop = MCAST_LOOP;
+	err = setsockopt(s,IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop));
+	if(err < 0)
+	{
+		satfi_log("setsockopt():IP_MULTICAST_LOOP error");
+		return -1;
+	}
+	
+	struct ip_mreq mreq; 									/*加入广播组*/
+	mreq.imr_multiaddr.s_addr = inet_addr(broadcastip); 	/*广播地址*/
+	mreq.imr_interface.s_addr = htonl(INADDR_ANY); 		/*网络接口为默认*/
+
+	/*将本机加入广播组*/
+	err = setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+	if (err < 0)
+	{
+		satfi_log("setsockopt():IP_ADD_MEMBERSHIP error");
+		return -1;
+	}
+
+	satfi_log("broadcast success Socket=%d ip=%s port=%d", s, broadcastip, broadcastport);
+	return s;
+}
+
+int card_init(char *devname, int type)
+{
+	int devfd;
+	int rate = RATE;	//采样率
+	int bits = BITS;		
+	int channels = CHANNELS;	//单通道
+	int flag;
+
+	if(type == RECORD)
+	{
+		flag = O_RDONLY;	//record
+	}
+	else
+	{
+		flag = O_WRONLY;	//playback		
+	}
+	
+	devfd = open(devname, flag);
+	if (devfd < 0) 
+	{
+		satfi_log("open of %s failed", devname);
+		return -1;
+	}
+	
+	ioctl(devfd, SOUND_PCM_WRITE_BITS, &bits);
+	ioctl(devfd, SOUND_PCM_WRITE_CHANNELS, &channels);
+	ioctl(devfd, SOUND_PCM_WRITE_RATE, &rate);
+	satfi_log("devname:%s type:%d devfd:%d", devname, type, devfd);
+	return devfd;
+}
+
+SpeexPreprocessState * SpeexPreprocessStateInit(void)
+{
+	SpeexPreprocessState *st;
+	st = speex_preprocess_state_init(NN, RATE);
+	
+	int vad = 1;
+	int vadProbStart = 90;
+	int vadProbContinue = 100;
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_VAD, &vad); //静音检测
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_START , &vadProbStart); //Set probability required for the VAD to go from silence to voice
+	speex_preprocess_ctl(st, SPEEX_PREPROCESS_SET_PROB_CONTINUE, &vadProbContinue); //Set probability required for the VAD to stay in the voice state (integer percent)
+	return st;
+}
+
+void SpeexPreprocessStateDestroy(SpeexPreprocessState *st)
+{
+	speex_preprocess_state_destroy(st);	
+}
+
+typedef struct _card_playback_info
+{
+	char *DevName;
+	int *BroadSocket;
+	int CmdPttOn;
+	int CmdPttOff;
+}Card_PlayBack_Info;
+
+typedef struct _card_record_info
+{
+	char *DevName;
+	int *BroadSocket;
+	char *BroadAddr;
+	int BroadPort;
+}Card_Record_Info;
+
+static void *card_record_thread(void *arg)
+{
+	int i=0;
+	int ret;
+	int vad;
+	char buf[320];
+	char enc_byte[320];
+	Card_Record_Info *card_record_info = (Card_Record_Info *)arg;
+
+	int *BroadSocket = card_record_info->BroadSocket;
+	
+	void *enc_state;
+	int nbBytes;
+	SpeexBits enc_bits;
+	
+	int recordfd = card_init(card_record_info->DevName, RECORD);
+
+	speex_bits_init(&enc_bits);
+	enc_state = speex_encoder_init(&speex_nb_mode);
+	int quality = 8;
+	speex_encoder_ctl(enc_state, SPEEX_SET_QUALITY, &quality);
+	
+	SpeexPreprocessState *st = SpeexPreprocessStateInit();
+
+	struct sockaddr_in mcast_addr;
+	memset(&mcast_addr, 0, sizeof(mcast_addr));								/*初始化IP多播地址为0*/
+	mcast_addr.sin_family 	   = AF_INET; 									/*设置协议族类行为AF*/
+	mcast_addr.sin_addr.s_addr = inet_addr(card_record_info->BroadAddr);	/*设置多播IP地址*/
+	mcast_addr.sin_port 	   = htons(card_record_info->BroadPort); 		/*设置多播端口*/
+	int len = sizeof(mcast_addr);
+
+	while(1)
+	{
+		if(recordfd > 0)
+		{
+			if((ret = read(recordfd, buf, 320)) <= 0)
+			{
+				satfi_log("read of %s failed", card_record_info->DevName);
+				close(recordfd);
+				recordfd = -1;
+				continue;
+			}
+		}
+		else
+		{
+			seconds_sleep(1);
+			recordfd = card_init(card_record_info->DevName, RECORD);
+			continue;
+		}
+
+		if(*BroadSocket > 0)
+		{
+			vad = speex_preprocess_run(st, (spx_int16_t *)buf);
+			if(vad)
+			{
+				//speex_bits_reset(&enc_bits);
+				//speex_encode_int(enc_state, (short *)buf, &enc_bits);
+				//nbBytes = speex_bits_write(&enc_bits, enc_byte, ret);
+				//if((i++)%50 == 0)satfi_log("sendto %s %s %d\n", card_record_info->DevName, card_record_info->BroadAddr, card_record_info->BroadPort);
+				if(sendto(*BroadSocket, buf, ret, 0, (struct sockaddr*)&mcast_addr, len) < 0)
+				{
+					satfi_log("card_record_thread sendto error %d\n", *BroadSocket);
+					close(*BroadSocket);
+					*BroadSocket = -1;
+				}
+			}
+		}
+		else
+		{
+			satfi_log("%s %s BroadSocket=%d", __FUNCTION__, card_record_info->DevName, *BroadSocket);
+			seconds_sleep(1);			
+		}
+	}
+
+	SpeexPreprocessStateDestroy(st);
+	return NULL;
+}
+
+static void *card_playback_thread(void *arg)
+{
+	int i=0;
+	int ret;
+	fd_set fds;
+	struct timeval timeout={3,0};
+	int pptstat=0;
+
+	char buf[320];
+	char dec[320];
+	Card_PlayBack_Info *card_playback_info = (Card_PlayBack_Info *)arg;
+
+	int *BroadSocket = card_playback_info->BroadSocket;
+	
+	struct sockaddr_in cli_addr; 		/*本地地址*/
+	int addr_len = sizeof(cli_addr);
+
+	void *dec_state;
+	SpeexBits dec_bits;
+	
+	speex_bits_init(&dec_bits);
+	dec_state = speex_decoder_init(&speex_nb_mode);
+	int playback = card_init(card_playback_info->DevName, PLAYBACK);
+
+	led_ctl(card_playback_info->CmdPttOff);
+	
+	while(1)
+	{
+		if(*BroadSocket > 0)
+		{
+			FD_ZERO(&fds);/* 每次循环都需要清空 */
+			FD_SET(*BroadSocket, &fds); /* 添加描述符 */
+			timeout.tv_sec = 2; 	
+			
+			switch(select(*BroadSocket+1, &fds, NULL, NULL, &timeout))
+			{
+				case -1: break;
+				case  0: 
+				{
+					if(pptstat)
+					{
+						satfi_log("%s PttOff=%d",card_playback_info->DevName, card_playback_info->CmdPttOff);
+						led_ctl(card_playback_info->CmdPttOff);
+						pptstat = 0;
+					}
+				}
+				break;
+				
+				default:
+				{
+					ret = recvfrom(*BroadSocket, buf, 320, 0, (struct sockaddr*)&cli_addr, &addr_len);
+					if( ret <= 0)
+					{
+						satfi_log("%s recvfrom() error %d", __FUNCTION__, *BroadSocket);
+						close(*BroadSocket);
+						*BroadSocket = -1;
+					}
+					else
+					{
+						//speex_bits_reset(&dec_bits);
+						//speex_bits_read_from(&dec_bits, buf, ret);
+						//speex_decode_int(dec_state, &dec_bits, (short *)dec);
+			
+						if(!pptstat)
+						{
+							satfi_log("%s PttOn=%d", card_playback_info->DevName, card_playback_info->CmdPttOn);
+							led_ctl(card_playback_info->CmdPttOn);
+							pptstat = 1;
+						}
+						//if((i++)%50 == 0)satfi_log("recvfrom %s %s %d", card_playback_info->DevName, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));					
+						if((ret = write(playback, buf, 320)) <= 0)
+						{
+							satfi_log("write of %s failed", card_playback_info->DevName);
+							close(playback);
+							playback = card_init(card_playback_info->DevName, PLAYBACK);
+							seconds_sleep(1);
+						}
+					}
+				}
+				break;
+			}
+		}
+		else
+		{
+			satfi_log("%s %s BroadSocket=%d", __FUNCTION__, card_playback_info->DevName, *BroadSocket);
+			seconds_sleep(1);
+		}
+	}
+	
+	return NULL;
+}
+
+void CardBroadCast_fork(void)
+{
+	pthread_t tID1;
+	pthread_t tID2;
+	pthread_t tID3;
+	pthread_t tID4;
+	
+	prctl(PR_SET_PDEATHSIG, SIGKILL);//父进程退出发送SIGKILL 给子进程
+	signal(SIGPIPE,SignalHandler);
+
+	int broadSocket1 = -1;
+	int broadSocket2 = -1;
+
+	Card_PlayBack_Info card1_playback_info;
+	card1_playback_info.DevName 	= CARD1;
+	card1_playback_info.BroadSocket = &broadSocket1;
+	card1_playback_info.CmdPttOn 	= PTT1_ON;
+	card1_playback_info.CmdPttOff 	= PTT1_OFF;
+	
+	Card_Record_Info card1_record_info;
+	card1_record_info.DevName = CARD1;
+	card1_record_info.BroadSocket = &broadSocket1;
+	card1_record_info.BroadAddr = MCAST_ADDR_CARD1;
+	card1_record_info.BroadPort = MCAST_PORT_CARD1;
+
+	Card_PlayBack_Info card2_playback_info;
+	card2_playback_info.DevName 	= CARD2;
+	card2_playback_info.BroadSocket = &broadSocket2;
+	card2_playback_info.CmdPttOn 	= PTT2_ON;
+	card2_playback_info.CmdPttOff 	= PTT2_OFF;
+
+	Card_Record_Info card2_record_info;
+	card2_record_info.DevName = CARD2;
+	card2_record_info.BroadSocket = &broadSocket2;
+	card2_record_info.BroadAddr = MCAST_ADDR_CARD2;
+	card2_record_info.BroadPort = MCAST_PORT_CARD2;
+
+	if(pthread_create(&tID1, NULL, card_record_thread, (void *)&card1_record_info) == -1) exit(1);
+	if(pthread_create(&tID2, NULL, card_playback_thread, (void *)&card1_playback_info) == -1) exit(1);
+	if(pthread_create(&tID3, NULL, card_record_thread, (void *)&card2_record_info) == -1) exit(1);
+	if(pthread_create(&tID4, NULL, card_playback_thread, (void *)&card2_playback_info) == -1) exit(1);
+
+	while(1)
+	{
+		if(checkroute(ROUTE, MCAST_ADDR_CARD2, 1) == 0)
+		{
+			if(broadSocket2 < 0)
+			{
+				broadSocket2 = broadcast_init(MCAST_ADDR_CARD2, MCAST_PORT_CARD2);	
+			}
+		}
+		else
+		{
+			char cmd[128] = {0};
+			sprintf(cmd, "route add -net %s netmask 255.255.255.255 %s", MCAST_ADDR_CARD2, ROUTE);
+			satfi_log("%s", cmd);
+			myexec(cmd, NULL, NULL);
+			if(broadSocket2 > 0)
+			{
+				close(broadSocket2);
+				broadSocket2 = -1;
+			}
+		}
+
+		if(checkroute(ROUTE, MCAST_ADDR_CARD1, 1) == 0)
+		{
+			if(broadSocket1 < 0)
+			{
+				broadSocket1 = broadcast_init(MCAST_ADDR_CARD1, MCAST_PORT_CARD1);
+			}
+		}
+		else
+		{
+			char cmd[128] = {0};
+			sprintf(cmd, "route add -net %s netmask 255.255.255.255 %s", MCAST_ADDR_CARD1, ROUTE);
+			satfi_log("%s", cmd);
+			myexec(cmd, NULL, NULL);
+			if(broadSocket1 > 0)
+			{
+				close(broadSocket1);
+				broadSocket1 = -1;
+			}
+		}
+		
+		seconds_sleep(1);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	int status;
 	pid_t fpid;
-
+	
+	//signal(SIGCHLD,SIG_IGN);
 	//等效于ulimit -c unlimited,为了程序发生错误时产生coredump文件
-    struct rlimit coreFileSize;
-    bzero(&coreFileSize, sizeof(coreFileSize));
-    coreFileSize.rlim_cur = 1000*1024;
-    coreFileSize.rlim_max = 4294967295UL;
-    setrlimit(RLIMIT_CORE, &coreFileSize);
+    //struct rlimit coreFileSize;
+    //bzero(&coreFileSize, sizeof(coreFileSize));
+    //coreFileSize.rlim_cur = 1000*1024;
+    //coreFileSize.rlim_max = 4294967295UL;
+    //setrlimit(RLIMIT_CORE, &coreFileSize);
 
 	while(1)
 	{
@@ -9192,6 +9564,7 @@ int main(int argc, char *argv[])
 		else if(fpid == 0)
 		{
 			main_fork();
+			//CardBroadCast_fork();
 		}
 		
 		wait(&status);

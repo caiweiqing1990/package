@@ -137,4 +137,5 @@
 #define ENABLE_GSTAR_OUT	*GPIO39_24_DIR |= (1<<5)	//GE1_TXCLK GPIO#29
 #define ENABLE_GSTAR		*GPIO39_24_DATA &= ~(1<<5)
 #define DISABLE_GSTAR		*GPIO39_24_DATA |= (1<<5)
+
 #endif

@@ -28,12 +28,27 @@
 #define GPS96_LED_ON 		2
 #define GPS96_LED_OFF 		3
 #define GPIO22_GET_IODATA 	4
-#define GE1_TXD2_ON		8
-#define GE1_TXD2_OFF	9
+#define GE1_TXD2_ON			8
+#define GE1_TXD2_OFF		9
+
+#define PTT1_ON				10
+#define PTT1_OFF			11
+#define PTT2_ON				12
+#define PTT2_OFF			13
 
 #define GE1_TXD2_OUT	*GPIO39_24_DIR |= (0x1<<2)
 #define GE1_TXD2_H		*GPIO39_24_DATA |= (0x1<<2)
-#define GE1_TXD2_L		*GPIO39_24_DATA &= ~(0x1<<2);
+#define GE1_TXD2_L		*GPIO39_24_DATA &= ~(0x1<<2)
+
+//ptt1
+#define PTT1_OUT		*GPIO39_24_DIR |= (1<<5)
+#define PTT1_H			*GPIO39_24_DATA |= (1<<5)
+#define PTT1_L			*GPIO39_24_DATA &= ~(1<<5)
+
+//ptt2
+#define PTT2_OUT		*GPIO71_40_DIR |= (1<<24)
+#define PTT2_H			*GPIO71_40_DATA |= (1<<24)
+#define PTT2_L			*GPIO71_40_DATA &= ~(1<<24)
 
 #define LED_DRIVER_NAME "leds_driver"
 
@@ -83,10 +98,22 @@ static long leds_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned lo
 			break;
 		case GE1_TXD2_ON:
 			GE1_TXD2_H;
-		break;
+			break;
 		case GE1_TXD2_OFF:
 			GE1_TXD2_L;
-		break;
+			break;
+		case PTT1_ON:
+			PTT1_H;
+			break;
+		case PTT1_OFF:
+			PTT1_L;
+			break;
+		case PTT2_ON:
+			PTT2_H;
+			break;
+		case PTT2_OFF:
+			PTT2_L;
+			break;
 		default:
 			break;
 	}
@@ -130,19 +157,22 @@ static int __init myleds_init(void)
 	
 	GE1_TXD2_OUT;//用于电池电量提示
 	GE1_TXD2_H;
+
+	PTT1_OUT;
+	PTT2_OUT;
+	PTT1_L;
+	PTT2_L;
 	
-	//*GPIOMODE |= (0x7<<2);
-	//printk("GPIOMODE=%08x\n", *GPIOMODE);
-	//*GPIO23_00_DIR &= ~(0xf<<11);
-	//*GPIO23_00_DIR |= (0xb<<11);
-	//*GPIO23_00_DATA &= ~(0xf<<11);
-	//msleep(100);
-	//printk("GPIO23_00_DATA=%08x,GPIO23_00_DIR=%08x,GPIOMODE=%08x\n", *GPIO23_00_DATA, *GPIO23_00_DIR, *GPIOMODE);
+	PTT1_H;
+	PTT2_H;
+	
 	return 0; 
 }
 
 static void __exit myleds_exit(void)
 {
+	PTT1_L;
+	PTT2_L;
 	*GPIO71_40_DATA |= ((1<<5)|(1<<7)); //点亮LED
 	//printk("GPIO71_40_DIR = %x\n",*GPIO71_40_DIR);
 	//printk("GPIO71_40_DATA = %x\n",*GPIO71_40_DATA);
