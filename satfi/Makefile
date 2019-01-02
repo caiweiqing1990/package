@@ -55,7 +55,7 @@ define Package/satfi/install
 	
 	$(INSTALL_DIR) $(1)/etc/chatscripts
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/3g.chat $(1)/etc/chatscripts/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/sat-sm2700.chat $(1)/etc/chatscripts/
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/sat-sm2700.chat $(1)/etc/chatscripts/
 	
 #	$(INSTALL_DIR) $(1)/lib/netifd/proto
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/3g.sh $(1)/lib/netifd/proto/
@@ -66,7 +66,7 @@ define Package/satfi/install
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/40-gprs $(1)/etc/hotplug.d/usb/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/50-gprs $(1)/etc/hotplug.d/usb/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/60-gprs $(1)/etc/hotplug.d/usb/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/40-sat-sm2700 $(1)/etc/hotplug.d/usb/
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/40-sat-sm2700 $(1)/etc/hotplug.d/usb/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/hotplug.d/usb/70-usbstm32 $(1)/etc/hotplug.d/usb/
 
 #	$(INSTALL_DIR) $(1)/etc/syslog-ng
@@ -74,11 +74,11 @@ define Package/satfi/install
 	
 	$(INSTALL_DIR) $(1)/etc/rc.d
 	$(CP) $(PKG_BUILD_DIR)/etc/rc.d/S36satfi $(1)/etc/rc.d/
-	$(CP) $(PKG_BUILD_DIR)/etc/rc.d/S100watchdog $(1)/etc/rc.d/
+#	$(CP) $(PKG_BUILD_DIR)/etc/rc.d/S100watchdog $(1)/etc/rc.d/
 	
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/satfi $(1)/etc/init.d/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/watchdog $(1)/etc/init.d/
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/watchdog $(1)/etc/init.d/
 	
 #	$(INSTALL_DIR) $(1)/$(TARGET_MODULES_DIR)/
 #	$(INSTALL_BIN) $(KERNEL_BUILD_DIR)/leds_driver/leds_driver.ko $(1)/$(TARGET_MODULES_DIR)/

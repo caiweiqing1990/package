@@ -1691,42 +1691,135 @@ void* get_log_data(char *MsID)
  * @device
  * @baud_rate
  */
+
+int Uart_Init(char *device, int baud_rate, int data_bits, char parity, int stop_bits)
+{
+	int fd = open(device, O_RDWR|O_NOCTTY);
+	if(fd == -1)
+	{
+		printf("Uart Open Failed!\n");
+		return -1;
+	}
+	struct termios new_cfg, old_cfg;
+	int speed;
+	/*保存并测试现有串口参数设置，在这里如果串口号等出错，会有相关出错信息*/
+	if(tcgetattr(fd, &old_cfg) != 0)       /*该函数得到fd指向的终端配置参数，并将它们保存到old_cfg变量中，成功返回0，否则-1*/
+	{
+		perror("tcgetttr"); 
+		return -1;	  
+	}
+	/*设置字符大小*/
+	new_cfg = old_cfg;   
+	cfmakeraw(&new_cfg); /*配置为原始模式*/ 
+	new_cfg.c_cflag &= ~CSIZE; /*用位掩码清空数据位的设置*/  
+	/*设置波特率*/
+	switch(baud_rate)
+	{
+		case 2400:
+			speed = B2400;		
+		break;
+		case 4800:
+			speed = B4800;			
+		break;
+		case 9600:
+			speed = B9600;			
+		break;
+		case 19200:	
+			speed = B19200;			
+		break;
+		case 38400:		
+			speed = B38400;			
+		break;
+		case 115200:			
+			speed = B115200;			
+		default:
+		break;
+	}
+	
+	cfsetispeed(&new_cfg, speed); //设置输入波特率
+	cfsetospeed(&new_cfg, speed); //设置输出波特率
+	/*设置数据长度*/
+	switch(data_bits)
+	{
+		case 5:
+			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
+			new_cfg.c_cflag |= CS5;
+		break;
+		case 6:
+			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
+			new_cfg.c_cflag |= CS6;
+		break;
+		case 7:
+			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
+			new_cfg.c_cflag |= CS7;
+		break;
+		default:			
+		case 8:
+			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
+			new_cfg.c_cflag |= CS8;
+		break;
+	}
+	/*设置奇偶校验位*/
+	switch(parity)
+	{
+		default:
+		case 'n':
+		case 'N': //无校验
+		{
+			new_cfg.c_cflag &= ~PARENB;
+			new_cfg.c_iflag &= ~INPCK;
+		}	
+		break;
+		case 'o': //奇校验
+		case 'O':
+		{
+			new_cfg.c_cflag |= (PARODD | PARENB);
+			new_cfg.c_iflag |= INPCK;
+		}		
+		break;
+		case 'e': //偶校验
+		case 'E':
+		{
+			new_cfg.c_cflag |=  PARENB;
+			new_cfg.c_cflag &= ~PARODD;
+			new_cfg.c_iflag |= INPCK;
+		}
+		break;
+	}
+	/*设置停止位*/
+	switch(stop_bits)
+	{
+		default:
+		case 1:
+			new_cfg.c_cflag &= ~CSTOPB;
+		break;
+		case 2:
+			new_cfg.c_cflag |= CSTOPB;
+		break;
+	}
+
+	/*设置等待时间和最小接收字符*/
+	new_cfg.c_cc[VTIME] = 1; /* 读取一个字符等待1*(1/10)s */
+	new_cfg.c_cc[VMIN] = 1; /* 读取字符的最少个数为1 */
+	/*处理未接收字符*/
+	tcflush(fd, TCIFLUSH); //溢出数据可以接收，但不读
+	/* 激活配置 (将修改后的termios数据设置到串口中)
+	* TCSANOW：所有改变立即生效
+	*/
+	if((tcsetattr(fd, TCSANOW, &new_cfg))!= 0)
+	{
+		perror("tcsetattr");
+		return -1;  
+	}
+	
+	return fd;	   
+}
+
+
 int init_serial(int *fd, char *device, int baud_rate)
 {
   satfi_log("open serial port : %s ...\n", device);
-  int fd_serial = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
-  if (fd_serial < 0)
-  {
-    satfi_log("open %s faile",device);
-    return -1;
-  }
-
-  *fd = fd_serial;
-
-  /* 串口主要设置结构体termios <termios.h> */
-  struct termios options;
-
-  /* 1.tcgetattr()用于获取与终端相关的参数
-   *   参数fd为终端的文件描述符，返回的结果保存在termios结构体中
-   */
-  tcgetattr(fd_serial, &options);
-
-  /* 2.修改获得的参数 */
-  options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
-  options.c_cflag &= ~CSIZE;         /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
-  options.c_cflag &= ~CRTSCTS;       /* 无硬件流控 */
-  options.c_cflag |= CS8;            /* 8位数据长度 */
-  options.c_cflag &= ~CSTOPB;        /* 1位停止位 */
-  options.c_iflag |= IGNPAR;         /* 无奇偶校验 */
-  options.c_oflag = 0;               /* 输出模式 */
-  options.c_lflag = 0;               /* 不激活终端模式 */
-  cfsetospeed(&options, baud_rate);    /* 设置波特率 */
-
-  /* 3.设置新属性: TCSANOW，所有改变立即生效 */
-  tcflush(fd_serial, TCIFLUSH);      /* 溢出数据可以接收，但不读 */
-  tcsetattr(fd_serial, TCSANOW, &options);
-
-  //satfi_log("open serial port : %s successfully!!!\n", device);
+  *fd = Uart_Init(device, baud_rate, 8, 'N', 1);
   return 0;
 }
 
@@ -2574,27 +2667,19 @@ static void *func_y(void *p)
 	BASE *base = (BASE*)p;
 	int counter = 0;
 
-#define SAT_MESSAGE_DEV	"/dev/ttySAT1"
+//#define SAT_MESSAGE_DEV	"/dev/ttyS0"
 
 	while(1)
 	{
 		sat_lock();
-		if (!isFileExists(base->sat.sat_dev_name) || !isFileExists(SAT_MESSAGE_DEV) ||	\
-			base->sat.sat_state == SAT_STATE_RESTART)
+		if (!isFileExists(base->sat.sat_dev_name) || base->sat.sat_state == SAT_STATE_RESTART)
 		{
 			if(!isFileExists(base->sat.sat_dev_name))satfi_log("no exist %s", base->sat.sat_dev_name);
-			if(!isFileExists(base->sat.sat_dev_name))satfi_log("no exist %s", SAT_MESSAGE_DEV);
 		
 			if(base->sat.sat_fd > 0)
 			{
 				close(base->sat.sat_fd);
 				base->sat.sat_fd = -1;
-			}
-			
-			if(base->sat.sat_fd_message > 0)
-			{
-				close(base->sat.sat_fd_message);
-				base->sat.sat_fd_message = -1;
 			}
 			
 			satfi_log("power_mode msm01a reset %d %d\n",__LINE__, base->sat.sat_state);
@@ -2603,9 +2688,8 @@ static void *func_y(void *p)
 			base->sat.sat_msg_sending = 0;
 			myexec("power_mode msm01a reset", NULL, NULL);
 			sat_unlock();
-			seconds_sleep(20);
+			seconds_sleep(30);
 			continue;
-			
 		}
 		else
 		{
@@ -2613,15 +2697,11 @@ static void *func_y(void *p)
 			{
 				init_serial(&base->sat.sat_fd, base->sat.sat_dev_name, base->sat.sat_baud_rate);
 				base->sat.sat_state = SAT_STATE_AT;
-			}
-			
-			if(base->sat.sat_fd_message < 0)
-			{
-				init_serial(&base->sat.sat_fd_message, SAT_MESSAGE_DEV, base->sat.sat_baud_rate);
+				base->sat.sat_fd_message = base->sat.sat_fd;
 			}
 		}		
 		
-		if(base->sat.sat_fd > 0 && base->sat.sat_calling == 0)
+		if(base->sat.sat_fd > 0 && base->sat.sat_calling == 0 && base->sat.sat_msg_sending == 0)
 		{
 			//satfi_log("sat module state = %d\n", base->sat.sat_state);
 			switch(base->sat.sat_state)
@@ -2629,14 +2709,12 @@ static void *func_y(void *p)
 				case SAT_STATE_AT:
 					satfi_log("func_y:send AT to SAT Module\n");
 					uart_send(base->sat.sat_fd, "AT\r\n", 4);
-					uart_send(base->sat.sat_fd_message, "AT\r\n", 4);
 					base->sat.sat_state = SAT_STATE_AT_W;
 					counter=0;
 					break;
 				case SAT_STATE_AT_W:
 					satfi_log("func_y:send AT to SAT Module %d\n", counter);
 					uart_send(base->sat.sat_fd, "AT\r\n", 4);
-					uart_send(base->sat.sat_fd_message, "AT\r\n", 4);
 					base->sat.sat_state = SAT_STATE_AT_W;
 					counter++;
 					if(counter >= 20)
@@ -2647,9 +2725,10 @@ static void *func_y(void *p)
 					}
 					break;
 				case SAT_STATE_SIM_ACTIVE:
-					satfi_log("func_y:send AT+CFUN=5 to SAT Module\n");
-					uart_send(base->sat.sat_fd, "AT+CFUN=5\r\n", 11);
+					satfi_log("func_y:send AT+CFUN=1 to SAT Module\n");
+					uart_send(base->sat.sat_fd, "AT+CFUN=1\r\n", 11);
 					base->sat.sat_state = SAT_STATE_SIM_ACTIVE_W;
+					seconds_sleep(20);
 					break;
 				case SAT_STATE_CFUN:
 					satfi_log("func_y:send AT+CFUN? to SAT Module\n");
@@ -2953,71 +3032,68 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				else if(strstr(data,"+CMT"))
 				{
 					if(idx>18 && data[idx-2]=='\n' && data[idx-1]=='\n')
-					{
-						if(base.sat.sat_fd_message == *satfd)
+					{					
+						satfi_log("%d %d %d %s",strlen(data), base.sat.sat_fd_message, idx, data);
+						unsigned char Decode[1024] = {0};
+						char OAphonenum[21] = {0};	//发送方地址（手机号码）
+						int i=0;
+						
+						for(i=2;i<strlen(data);i++)
 						{
-							satfi_log("%d %d %d %s",strlen(data), base.sat.sat_fd_message, idx, data);
-							unsigned char Decode[1024] = {0};
-							char OAphonenum[21] = {0};	//发送方地址（手机号码）
-							int i=0;
-							
-							for(i=2;i<strlen(data);i++)
+							if(data[i] == '\n' && data[i+1] == '\n')
 							{
-								if(data[i] == '\n' && data[i+1] == '\n')
-								{
-									break;
-								}
+								break;
 							}
-							
-							int len = MessageParse(&data[i+2], OAphonenum, Decode);
-							satfi_log("MessageParse %s %s %d %d %d", OAphonenum, Decode, *satfd, i, strlen(data));
-							char tmp[1024]={0};
-							MsgGetMessageRsp *rsp = (MsgGetMessageRsp *)tmp;
-							rsp->header.length = sizeof(MsgGetMessageRsp)+strlen(Decode)+1;
-							rsp->header.mclass = RECV_MESSAGE;
-							//strncpy(rsp1->MsID, req->MsID, 21);
-							rsp->Result = 1;
-							strncpy(rsp->SrcMsID, OAphonenum, 21);
-							rsp->Type = 3;
-							rsp->ID = time(0);
-							unsigned long long t = (unsigned long long)rsp->ID*1000;
-							memcpy(rsp->Date, &t, sizeof(rsp->Date));
-							memcpy(rsp->message, Decode, strlen(Decode)+1);
-
-
-							USER * toUser = gp_users;
-							int toUserSocket=-1;
-							while(toUser)
-							{
-								for(i=0; i<toUser->famNumConut && i<10; i++)
-								{
-									if(strstr(toUser->FamiliarityNumber[i], OAphonenum))
-									{
-										satfi_log("%s OAphonenum=%s %.21s", toUser->FamiliarityNumber[i], OAphonenum, toUser->userid);
-										toUserSocket = toUser->socketfd;
-										break;
-									}
-								}
-							
-								if(toUserSocket>0)
-								{
-									break;
-								}
-								
-								toUser=toUser->next;
-							}
-
-							if(toUserSocket == -1)
-							{
-								Data_To_ExceptMsID("TOALLMSID", rsp);
-							}
-							else
-							{
-								strncpy(rsp->MsID, toUser->userid, USERID_LLEN);
-								Data_To_MsID(toUser->userid, rsp);
-							}
-							
 						}
+						
+						int len = MessageParse(&data[i+2], OAphonenum, Decode);
+						satfi_log("MessageParse %s %s %d %d %d", OAphonenum, Decode, *satfd, i, strlen(data));
+						char tmp[1024]={0};
+						MsgGetMessageRsp *rsp = (MsgGetMessageRsp *)tmp;
+						rsp->header.length = sizeof(MsgGetMessageRsp)+strlen(Decode)+1;
+						rsp->header.mclass = RECV_MESSAGE;
+						//strncpy(rsp1->MsID, req->MsID, 21);
+						rsp->Result = 1;
+						strncpy(rsp->SrcMsID, OAphonenum, 21);
+						rsp->Type = 3;
+						rsp->ID = time(0);
+						unsigned long long t = (unsigned long long)rsp->ID*1000;
+						memcpy(rsp->Date, &t, sizeof(rsp->Date));
+						memcpy(rsp->message, Decode, strlen(Decode)+1);
+
+
+						USER * toUser = gp_users;
+						int toUserSocket=-1;
+						while(toUser)
+						{
+							for(i=0; i<toUser->famNumConut && i<10; i++)
+							{
+								if(strstr(toUser->FamiliarityNumber[i], OAphonenum))
+								{
+									satfi_log("%s OAphonenum=%s %.21s", toUser->FamiliarityNumber[i], OAphonenum, toUser->userid);
+									toUserSocket = toUser->socketfd;
+									break;
+								}
+							}
+						
+							if(toUserSocket>0)
+							{
+								break;
+							}
+							
+							toUser=toUser->next;
+						}
+
+						if(toUserSocket == -1)
+						{
+							Data_To_ExceptMsID("TOALLMSID", rsp);
+						}
+						else
+						{
+							strncpy(rsp->MsID, toUser->userid, USERID_LLEN);
+							Data_To_MsID(toUser->userid, rsp);
+						}
+						
 						idx = 0;
 					}
 				}								
@@ -3205,7 +3281,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				{
 					if(data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						//satfi_log("%s %d", data, __LINE__);
+						satfi_log("%s %d", data, __LINE__);
 						strncpy(base.sat.sat_imsi, &data[9], 15);
 						if(base.sat.sat_state==SAT_STATE_IMSI_W)
 						{
@@ -7677,7 +7753,8 @@ void *SystemServer(void *p)
 			}
 		}
 
-		if(base->sat.sat_state_phone != SAT_STATE_PHONE_DIALING)
+		//if(base->sat.sat_state_phone != SAT_STATE_PHONE_DIALING)
+		if(base->sat.sat_calling == 0)
 		{
 			if(base->sat.sat_msg_sending == 0)
 			{
@@ -9060,13 +9137,6 @@ void main_thread_loop(void)
 				maxfd = base.sat.sat_fd;
 			}
 		}
-		
-		if(base.sat.sat_fd_message > 0) {
-			FD_SET(base.sat.sat_fd_message, &fds);
-			if(base.sat.sat_fd_message > maxfd) {
-				maxfd = base.sat.sat_fd_message;
-			}
-		}		
 
 		if(base.n3g.n3g_fd > 0) {
 			FD_SET(base.n3g.n3g_fd, &fds);
@@ -9094,10 +9164,6 @@ void main_thread_loop(void)
 					handle_sat_data(&base.sat.sat_fd, SatDataBuf[0], &SatDataOfs[0]);//卫星模块数据
 				}
 
-				if(base.sat.sat_fd_message > 0 && FD_ISSET(base.sat.sat_fd_message, &fds)) {
-					handle_sat_data(&base.sat.sat_fd_message, SatDataBuf[1], &SatDataOfs[1]);//卫星模块数据
-				}
-
 				if(base.n3g.n3g_fd > 0 && FD_ISSET(base.n3g.n3g_fd, &fds)) {
 					handle_gprs_data(base.n3g.n3g_fd);//gprs串口数据
 				}
@@ -9121,17 +9187,17 @@ int main_fork(void)
 	
 	//处理服务器,APP数据
 	if(pthread_create(&id_1, NULL, select_app, (void *)&base) == -1) exit(1);
-	//if(pthread_create(&id_2, NULL, select_tsc, (void *)&base) == -1) exit(1);
+	if(pthread_create(&id_2, NULL, select_tsc, (void *)&base) == -1) exit(1);
 
 	//切换路由
 	if(pthread_create(&id_3, NULL, check_route, (void *)&base) == -1) exit(1);
 
 	//使用udp，接收服务器对讲语音数据
-	if(pthread_create(&id_4, NULL, select_tsc_udp, (void *)&base) == -1) exit(1);
+	//if(pthread_create(&id_4, NULL, select_tsc_udp, (void *)&base) == -1) exit(1);
 	
 	//System检测，心跳包
 	if(pthread_create(&id_5, NULL, SystemServer, (void *)&base) == -1) exit(1);
-	if(pthread_create(&id_6, NULL, CheckProgramUpdateServer, (void *)&base) == -1) exit(1);
+	//if(pthread_create(&id_6, NULL, CheckProgramUpdateServer, (void *)&base) == -1) exit(1);
 
 	//sat拨号线程,ring检测
 	if(pthread_create(&id_4, NULL, func_y, (void *)&base) == -1) exit(1);
