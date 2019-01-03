@@ -3496,7 +3496,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else
 					{
-						satfi_log("not parse sat data %d:%d:%s",base.sat.sat_fd_message, *satfd, data);						
+						//satfi_log("not parse sat data %d:%d:%s",base.sat.sat_fd_message, *satfd, data);						
 					}
 					idx=0;
 				}
