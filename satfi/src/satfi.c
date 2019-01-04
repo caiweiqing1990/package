@@ -2671,7 +2671,7 @@ static void *func_y(void *p)
 
 	while(1)
 	{
-		sat_lock();
+		//sat_lock();
 		if (!isFileExists(base->sat.sat_dev_name) || base->sat.sat_state == SAT_STATE_RESTART)
 		{
 			if(!isFileExists(base->sat.sat_dev_name))satfi_log("no exist %s", base->sat.sat_dev_name);
@@ -2687,7 +2687,6 @@ static void *func_y(void *p)
 			base->sat.sat_status = 0;
 			base->sat.sat_msg_sending = 0;
 			myexec("power_mode msm01a reset", NULL, NULL);
-			sat_unlock();
 			seconds_sleep(30);
 			continue;
 		}
@@ -2725,10 +2724,10 @@ static void *func_y(void *p)
 					}
 					break;
 				case SAT_STATE_SIM_ACTIVE:
+				case SAT_STATE_SIM_ACTIVE_W:
 					satfi_log("func_y:send AT+CFUN=1 to SAT Module\n");
 					uart_send(base->sat.sat_fd, "AT+CFUN=1\r\n", 11);
 					base->sat.sat_state = SAT_STATE_SIM_ACTIVE_W;
-					seconds_sleep(20);
 					break;
 				case SAT_STATE_CFUN:
 					satfi_log("func_y:send AT+CFUN? to SAT Module\n");
@@ -2745,9 +2744,10 @@ static void *func_y(void *p)
 					satfi_log("func_y:send AT+CFUN=1 to SAT Module\n");
 					uart_send(base->sat.sat_fd, "AT+CFUN=1\r\n", 11);
 					base->sat.sat_state = SAT_STATE_FULL_FUN_W;
+					seconds_sleep(20);
 					break;
 				case SAT_STATE_FULL_FUN_W:
-					base->sat.sat_state = SAT_STATE_CSQ;
+					base->sat.sat_state = SAT_STATE_IMSI;
 					break;
 				case SAT_STATE_CREG:
 				case SAT_STATE_CREG_W:
@@ -2784,7 +2784,7 @@ static void *func_y(void *p)
 			}
 		}
 		
-		sat_unlock();
+		//sat_unlock();
 		seconds_sleep(1);
 	}
 }
@@ -3149,6 +3149,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 							{
 								if(base.sat.sat_status == 1)
 								{
+									satfi_log("%s %d\n",data, __LINE__);
 									base.sat.sat_state = SAT_STATE_RESTART;
 								}
 								else
@@ -3210,15 +3211,21 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 				}
 				else if(strstr(data,"+CME ERROR"))
 				{
-					satfi_log("%s %d\n",data, __LINE__);
 					if(data[idx-2]=='\n' && data[idx-1]=='\n')
 					{
-						satfi_log("%s\n",data);
+						satfi_log("%s %d\n",data, __LINE__);
 						//printf("%s\n",data);
 						sat_lock();
 						if(strstr(data,"SIM not inserted"))
 						{
 							base.sat.sat_state = SAT_SIM_NOT_INSERTED;
+						}
+						else
+						{
+							if(base.sat.sat_state == SAT_STATE_IMSI_W)
+							{
+								base.sat.sat_state = SAT_STATE_FULL_FUN;
+							}
 						}
 
 						if(base.sat.sat_calling == 1)
@@ -3327,7 +3334,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 						if(base.sat.sat_fd == *satfd)
 						{
 							satfi_log("clcccnt %d %d %d", clcccnt, clcccntpre, base.sat.sat_state_phone);
-							if(clcccntpre > 0 && clcccntpre == clcccnt)
+							if(clcccntpre > 3 && clcccntpre == clcccnt)
 							{
 									base.sat.sat_state_phone = SAT_STATE_PHONE_COMING_HANGUP;
 									clcccnt=0;
@@ -3337,7 +3344,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else if(base.sat.sat_state==SAT_STATE_AT_W)
 					{
-						base.sat.sat_state = SAT_STATE_SIM_ACTIVE;
+						base.sat.sat_state = SAT_STATE_IMSI;
 					}
 					else if(base.sat.sat_state==SAT_STATE_SIM_ACTIVE_W)
 					{
@@ -3496,7 +3503,7 @@ int handle_sat_data(int *satfd, char *data, int *ofs)
 					}
 					else
 					{
-						//satfi_log("not parse sat data %d:%d:%s",base.sat.sat_fd_message, *satfd, data);						
+						satfi_log("not parse sat data %d:%d:%s",base.sat.sat_fd_message, *satfd, data);						
 					}
 					idx=0;
 				}
@@ -8382,7 +8389,7 @@ int ConnectTSC(char* routename, char* ip, int port, int *err, int timeout)
     if(connect(sockfd, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1) 
 	{
 		if(err != NULL) *err = errno;
-        if(routename && sock_tsc < 0)satfi_log("Connect Error:%s errno=%d sockfd=%d %s %d %s\n", strerror(errno), errno, sockfd, ip, port, routename);   
+        //if(routename && sock_tsc < 0)satfi_log("Connect Error:%s errno=%d sockfd=%d %s %d %s\n", strerror(errno), errno, sockfd, ip, port, routename);   
 		close(sockfd);
         return -1;
     }

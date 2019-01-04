@@ -544,12 +544,7 @@ static int __init power_mode_init(void)
 	ENABLE_GSTAR;	//ENABLE_GSTAR
 
 	//MSM01A_power_on();
-	//MSM01A_reset();
-	
-	A2B_WAKEUP_OUT;
-	A2B_WAKEUP_L;
-	A2B_SLEEP_OUT;
-	A2B_SLEEP_L;
+	//MSM01A_reset();	
 	printk("GPIO39_24_DIR=%08x,GPIO39_24_DATA=%08x,GPIOMODE=%08x\n", *GPIO39_24_DIR, *GPIO39_24_DATA, *GPIOMODE);
 	return 0;
 }
