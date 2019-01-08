@@ -543,7 +543,7 @@ static int __init power_mode_init(void)
 	ENABLE_GSTAR_OUT;  	//GE1_TXCLK GPIO#29 ENABLE_GSTAR_OUT
 	ENABLE_GSTAR;	//ENABLE_GSTAR
 
-	MSM01A_power_on();
+	//MSM01A_power_on();
 	//MSM01A_reset();	
 	printk("GPIO39_24_DIR=%08x,GPIO39_24_DATA=%08x,GPIOMODE=%08x\n", *GPIO39_24_DIR, *GPIO39_24_DATA, *GPIOMODE);
 	return 0;
