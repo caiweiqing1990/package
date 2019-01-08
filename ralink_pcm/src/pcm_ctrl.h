@@ -226,11 +226,12 @@
 //#define PCM_ULAW
 //#define PCM_ALAW
 //#define PCM_U2L2U
-//#define PCM_A2L2A
+ //#define PCM_A2L2A
 //#define PCM_L2U2L
-//#define PCM_L2A2L
+ //#define PCM_L2A2L
 //#define PCM_SW_L2U
 //#define PCM_SW_L2A
+
 #define PCM_TASKLET
 //#define PCM_RECORD
 //#define PCM_PLAYBACK

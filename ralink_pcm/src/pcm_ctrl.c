@@ -230,8 +230,8 @@ int pcm_reg_setup(pcm_config_type* ptrpcm_config)
 		data |= REGBIT(ptrpcm_config->ts_start[i], PCM_TS_START);
 		MSG("PCM_CH_CFG(%d)=0x%08X\n",i,data);
 		pcm_outw(PCM_CH_CFG(i), data);
-	}  
-#else	
+	}
+#else
 	/* set CH0/1_CFG */	
 	data = pcm_inw(PCM_CH0_CFG);
 	data |= REGBIT(ptrpcm_config->lbk[0], PCM_LBK);

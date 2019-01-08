@@ -13,42 +13,64 @@
 
 int init_serial(int *fd, char *device, int baud_rate)
 {
-  int fd_serial = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
-  if (fd_serial < 0)
-  {
-    perror("open fd_serial");
-    return -1;
-  }
+	int fd_serial = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
+	if (fd_serial < 0)
+	{
+		perror("open fd_serial");
+		return -1;
+	}
 
-  *fd = fd_serial;
+	*fd = fd_serial;
 
-  /* 串口主要设置结构体termios <termios.h> */
-  struct termios options;
+	/* 串口主要设置结构体termios <termios.h> */
+	struct termios options;
 
-  /* 1.tcgetattr()用于获取与终端相关的参数
-   *   参数fd为终端的文件描述符，返回的结果保存在termios结构体中
-   */
-  tcgetattr(fd_serial, &options);
-  
-  cfmakeraw(&options);
-  options.c_cflag &= ~CSIZE;
-  /* 2.修改获得的参数 */
-  options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
-  options.c_cflag &= ~CSIZE;         /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
-  options.c_cflag &= ~CRTSCTS;       /* 无硬件流控 */
-  options.c_cflag |= CS8;            /* 8位数据长度 */
-  options.c_cflag &= ~CSTOPB;        /* 1位停止位 */
-  options.c_iflag |= IGNPAR;         /* 无奇偶校验 */
-  options.c_oflag = 0;               /* 输出模式 */
-  options.c_lflag = 0;               /* 不激活终端模式 */
-  cfsetospeed(&options, baud_rate);    /* 设置波特率 */
-  cfsetospeed(&options, baud_rate); //设置输出波特率
+	/* 1.tcgetattr()用于获取与终端相关的参数
+	*	参数fd为终端的文件描述符，返回的结果保存在termios结构体中
+	*/
+	tcgetattr(fd_serial, &options);
 
-  /* 3.设置新属性: TCSANOW，所有改变立即生效 */
-  tcflush(fd_serial, TCIFLUSH);      /* 溢出数据可以接收，但不读 */
-  tcsetattr(fd_serial, TCSANOW, &options);
+	/* 2.修改获得的参数 */
+	options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
+	options.c_cflag &= ~CSIZE;		   /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
+	options.c_cflag &= ~CRTSCTS;	   /* 无硬件流控 */
+	options.c_cflag |= CS8; 		   /* 8位数据长度 */
+	options.c_cflag &= ~CSTOPB; 	   /* 1位停止位 */
+	options.c_iflag |= IGNPAR;		   /* 无奇偶校验 */
+	options.c_oflag = 0;			   /* 输出模式 */
+	options.c_lflag = 0;			   /* 不激活终端模式 */
 
-  return 0;
+	switch(baud_rate)
+	{
+		case 2400:
+			baud_rate = B2400;		
+		break;
+		case 4800:
+			baud_rate = B4800;			
+		break;
+		case 9600:
+			baud_rate = B9600;			
+		break;
+		case 19200: 
+			baud_rate = B19200; 		
+		break;
+		case 38400: 	
+			baud_rate = B38400; 		
+		break;
+		case 115200:			
+			baud_rate = B115200;			
+		default:
+		break;
+	}
+
+	cfsetispeed(&options, baud_rate);	 /* 设置波特率 */
+	cfsetospeed(&options, baud_rate); //设置输出波特率
+
+	/* 3.设置新属性: TCSANOW，所有改变立即生效 */
+	tcflush(fd_serial, TCIFLUSH);	   /* 溢出数据可以接收，但不读 */
+	tcsetattr(fd_serial, TCSANOW, &options);
+
+	return 0;
 }
 
 int satfd = 0;
@@ -164,129 +186,6 @@ int uart_send(int fd, char *data, int datalen)
   return 0;
 }
 
-int Uart_Init(char *device, int baud_rate, int data_bits, char parity, int stop_bits)
-{
-	int fd = open(device, O_RDWR|O_NOCTTY);
-	if(fd == -1)
-	{
-		printf("Uart Open Failed!\n");
-		return -1;
-	}
-	struct termios new_cfg, old_cfg;
-	int speed;
-	/*保存并测试现有串口参数设置，在这里如果串口号等出错，会有相关出错信息*/
-	if(tcgetattr(fd, &old_cfg) != 0)       /*该函数得到fd指向的终端配置参数，并将它们保存到old_cfg变量中，成功返回0，否则-1*/
-	{
-		perror("tcgetttr"); 
-		return -1;	  
-	}
-	/*设置字符大小*/
-	new_cfg = old_cfg;   
-	cfmakeraw(&new_cfg); /*配置为原始模式*/ 
-	new_cfg.c_cflag &= ~CSIZE; /*用位掩码清空数据位的设置*/  
-	/*设置波特率*/
-	switch(baud_rate)
-	{
-		case 2400:
-			speed = B2400;		
-		break;
-		case 4800:
-			speed = B4800;			
-		break;
-		case 9600:
-			speed = B9600;			
-		break;
-		case 19200:	
-			speed = B19200;			
-		break;
-		case 38400:		
-			speed = B38400;			
-		break;
-		case 115200:			
-			speed = B115200;			
-		default:
-		break;
-	}
-	
-	cfsetispeed(&new_cfg, speed); //设置输入波特率
-	cfsetospeed(&new_cfg, speed); //设置输出波特率
-	/*设置数据长度*/
-	switch(data_bits)
-	{
-		case 5:
-			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
-			new_cfg.c_cflag |= CS5;
-		break;
-		case 6:
-			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
-			new_cfg.c_cflag |= CS6;
-		break;
-		case 7:
-			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
-			new_cfg.c_cflag |= CS7;
-		break;
-		default:			
-		case 8:
-			new_cfg.c_cflag &= ~CSIZE;//屏蔽其它标志位
-			new_cfg.c_cflag |= CS8;
-		break;
-	}
-	/*设置奇偶校验位*/
-	switch(parity)
-	{
-		default:
-		case 'n':
-		case 'N': //无校验
-		{
-			new_cfg.c_cflag &= ~PARENB;
-			new_cfg.c_iflag &= ~INPCK;
-		}	
-		break;
-		case 'o': //奇校验
-		case 'O':
-		{
-			new_cfg.c_cflag |= (PARODD | PARENB);
-			new_cfg.c_iflag |= INPCK;
-		}		
-		break;
-		case 'e': //偶校验
-		case 'E':
-		{
-			new_cfg.c_cflag |=  PARENB;
-			new_cfg.c_cflag &= ~PARODD;
-			new_cfg.c_iflag |= INPCK;
-		}
-		break;
-	}
-	/*设置停止位*/
-	switch(stop_bits)
-	{
-		default:
-		case 1:
-			new_cfg.c_cflag &= ~CSTOPB;
-		break;
-		case 2:
-			new_cfg.c_cflag |= CSTOPB;
-		break;
-	}
-
-	/*设置等待时间和最小接收字符*/
-	new_cfg.c_cc[VTIME] = 1; /* 读取一个字符等待1*(1/10)s */
-	new_cfg.c_cc[VMIN] = 1; /* 读取字符的最少个数为1 */
-	/*处理未接收字符*/
-	tcflush(fd, TCIFLUSH); //溢出数据可以接收，但不读
-	/* 激活配置 (将修改后的termios数据设置到串口中)
-	* TCSANOW：所有改变立即生效
-	*/
-	if((tcsetattr(fd, TCSANOW, &new_cfg))!= 0)
-	{
-		perror("tcsetattr");
-		return -1;  
-	}
-	
-	return fd;	   
-}
-
 /* 串口接收数据 */
 int main(int argc, char *argv[])
 {
@@ -297,9 +196,8 @@ int main(int argc, char *argv[])
 	}
 	
 	int baud_rate = atoi(argv[2]);
-	satfd = Uart_Init(argv[1], baud_rate, 8, 'N', 1);
-	//init_serial(&satfd, argv[1], baud_rate);
-	printf("satfd = %d baud_rate=%d\n",satfd, baud_rate);
+	init_serial(&satfd, argv[1], baud_rate);
+	printf("satfd = %d baud_rate=%d\n",satfd, B9600);
 	pthread_t thread_checksat;
 	pthread_create(&thread_checksat, NULL, func_xx, NULL);
 	char buf[1024]={0};
