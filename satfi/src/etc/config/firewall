@@ -11,7 +11,7 @@ config zone
 	option output 'ACCEPT'
 	option forward 'ACCEPT'
 	option masq '1'
-	option network 'lan lan2'
+	option network 'lan lan2 vpn'
 
 config zone
 	option name 'wan'
