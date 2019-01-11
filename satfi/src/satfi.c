@@ -35,8 +35,9 @@
 #include "led_control.h"
 #include "server.h"
 
-#define GPS_DATA_FILE		"/GpsData.txt"
-#define CALL_RECORDS_FILE	"/CallRecords.txt"
+#define GPS_DATA_FILE		"/etc/GpsData.txt"
+#define CALL_RECORDS_FILE	"/etc/CallRecords.txt"
+#define SAT_IMEI_FILE		"/etc/configSat.ini"
 
 #define USERID_LLEN 21 	 			//完整的用户ID长度
 #define USERID_LEN  12  			//上传TSC服务器时，只需要传送用户ID的后12位，以节约流量
@@ -7035,7 +7036,7 @@ static void *select_tsc_udp(void *p)
 									{
 										satfi_log("sat_imei=%s", base.sat.sat_imei);
 										strncpy(base.sat.sat_imei, sat_imei, sizeof(sat_imei));
-										SetKeyString("satellite", "SAT_IMEI", "/configSat.ini", NULL, base.sat.sat_imei);
+										SetKeyString("satellite", "SAT_IMEI", SAT_IMEI_FILE, NULL, base.sat.sat_imei);
 									}
 
 									int maxline = 1;
@@ -7919,11 +7920,11 @@ void init()
 	version_num = GetIniKeyInt("version","VERSIONNUM","/etc/config.ini");
 	satfi_log("version_num:%d\n", version_num);
 	
-	GetIniKeyString("satellite","SAT_IMEI","/configSat.ini",base.sat.sat_imei);
+	GetIniKeyString("satellite", "SAT_IMEI", SAT_IMEI_FILE, base.sat.sat_imei);
 	if(strlen(base.sat.sat_imei)==0)
 	{
 		sprintf(base.sat.sat_imei ,"80000086%07u", time(0)%1000000);
-		SetKeyString("satellite", "SAT_IMEI", "/configSat.ini", NULL, base.sat.sat_imei);
+		SetKeyString("satellite", "SAT_IMEI", SAT_IMEI_FILE, NULL, base.sat.sat_imei);
 	}
 }
  
