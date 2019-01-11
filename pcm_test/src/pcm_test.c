@@ -29,10 +29,10 @@
 #define PCM_PAGE_SIZE			8000
 
 int main(int argc, char **argv)
-{		
- 	if (argc != 3)
+{
+ 	if (argc != 2)
 	{
-		printf("%s test.raw maxsize\n", argv[0]);
+		printf("%s test.raw\n", argv[0]);
 		return -1;
 	}
 
@@ -51,19 +51,19 @@ int main(int argc, char **argv)
 	ioctl(pcmfd, PCM_SET_RECORD, &iRecordCH);
 	ioctl(pcmfd, PCM_START, 0);
 	
-	int fdr = open(argv[1], O_RDWR);
+	int fdr = open(argv[1], O_RDWR|O_CREAT, 0666);
 	if (fdr < 0)
 	{
 		printf("can't open %s\n", argv[1]);
 		return -1;
 	}
 	
-	int maxsize = atoi(argv[2]);
+	int maxsize = 3200;
 	
 	while(1)
 	{
 		//printf("readfdr=%d\n", record.size);
-		ret=read(fdr, voicebuf, maxsize);
+		ret=read(fdr, voicebuf, 3200);
 		if(ret != maxsize)
 		{
 			break;
@@ -72,6 +72,15 @@ int main(int argc, char **argv)
 		ioctl(pcmfd, PCM_WRITE_PCM, voicebuf);
 	}
 
+	int cnt = 0;
+	while(cnt>0)
+	{
+		cnt--;
+		//usleep(13000);
+		ioctl(pcmfd, PCM_READ_PCM, voicebuf);
+		write(fdr, voicebuf, 4800);
+	}
+	
 	sleep(5);
 	printf("quit\n");		
 	ioctl(pcmfd, PCM_STOP, 0);

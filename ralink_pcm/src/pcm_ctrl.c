@@ -265,41 +265,17 @@ int pcm_clock_setup(void)
 {
 	unsigned long data;
 
-#if defined(CONFIG_RALINK_RT3352)||defined(CONFIG_RALINK_RT3883)||defined(CONFIG_RALINK_RT5350) \
-	|| defined (CONFIG_RALINK_RT6855A) || defined(CONFIG_RALINK_MT7620) || defined(CONFIG_RALINK_MT7621) \
-	|| defined (CONFIG_RALINK_MT7628)
 	pcm_outw(RALINK_PCM_BASE+0x38, 1);
 	data = pcm_inw(RALINK_PCM_BASE+0x38);
 	MSG("PCM: enable fractinal PCM_CLK\n");
 	pcm_outw(PCM_DIVINT_CFG, CONFIG_RALINK_PCMINTDIV);
 	pcm_outw(PCM_DIVCOMP_CFG, CONFIG_RALINK_PCMCOMPDIV|0x80000000);
-#else	
-	/* System controller PCMCLK_DIV set */
-	data = pcm_inw(RALINK_SYSCTL_BASE+0x30);
-
-#if defined(CONFIG_RALINK_PCMEXTCLK)
-	data |= REGBIT(1, PCM_CLK_SEL);
-#else
-	data &= ~REGBIT(1, PCM_CLK_SEL);
-#endif	
-	data |= REGBIT(1, PCM_CLK_EN);	
-	data &= 0xFFFFFFC0;
-	data |= REGBIT(CONFIG_RALINK_PCMDIV, PCM_CLK_DIV);
-	data |= 0x00000080;
-	
-	pcm_outw(RALINK_SYSCTL_BASE+0x30, data);
-	MSG("RALINK_SYSCTL_BASE+0x30=0x%08X\n",(u32)data);	
-#endif	
 	
 	/* set PCMCFG external PCMCLK control bit */
-	data = pcm_inw(PCM_PCMCFG);
-#if defined(CONFIG_RALINK_PCMEXTCLK)
-	data |= REGBIT(1, PCM_EXT_CLK_EN);
-#else
-	data &= ~REGBIT(1, PCM_EXT_CLK_EN);
-#endif	
-	pcm_outw(PCM_PCMCFG, data);
-	MSG("PCM_PCMCFG=0x%08X\n",(u32)data);	
+	//data = pcm_inw(PCM_PCMCFG);
+	//data &= ~REGBIT(1, PCM_CLKOUT);
+	//pcm_outw(PCM_PCMCFG, data);
+	//MSG("PCM_PCMCFG=0x%08X\n",(u32)data);	
 	
 	return 0;	
 }
@@ -309,7 +285,7 @@ int pcm_clock_enable(void)
 	unsigned long data;
 	/* set PCMCFG clock out bit */
 	data = pcm_inw(PCM_PCMCFG);	
-	data |= REGBIT(1,  PCM_CLKOUT);
+	data &= ~REGBIT(1,  PCM_CLKOUT);
 	pcm_outw(PCM_PCMCFG, data);
 	MSG("PCM_PCMCFG=0x%08X\n",(u32)data);
 	
@@ -321,7 +297,7 @@ int pcm_clock_disable(void)
 	unsigned long data;
 	/* set PCMCFG clock out bit */
 	data = pcm_inw(PCM_PCMCFG);	
-	data &= ~REGBIT(1,  PCM_CLKOUT);
+	data |= REGBIT(1,  PCM_CLKOUT);
 	pcm_outw(PCM_PCMCFG, data);
 	MSG("PCM_PCMCFG=0x%08X\n",(u32)data);
 	

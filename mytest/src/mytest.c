@@ -13,12 +13,13 @@
 
 int init_serial(int *fd, char *device, int baud_rate)
 {
+	printf("open serial port : %s ...\n", device);
 	int fd_serial = open(device, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (fd_serial < 0)
 	{
 		perror("open fd_serial");
 		return -1;
-	}
+	} 
 
 	*fd = fd_serial;
 
@@ -26,19 +27,9 @@ int init_serial(int *fd, char *device, int baud_rate)
 	struct termios options;
 
 	/* 1.tcgetattr()用于获取与终端相关的参数
-	*	参数fd为终端的文件描述符，返回的结果保存在termios结构体中
+	*   参数fd为终端的文件描述符，返回的结果保存在termios结构体中
 	*/
 	tcgetattr(fd_serial, &options);
-
-	/* 2.修改获得的参数 */
-	options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
-	options.c_cflag &= ~CSIZE;		   /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
-	options.c_cflag &= ~CRTSCTS;	   /* 无硬件流控 */
-	options.c_cflag |= CS8; 		   /* 8位数据长度 */
-	options.c_cflag &= ~CSTOPB; 	   /* 1位停止位 */
-	options.c_iflag |= IGNPAR;		   /* 无奇偶校验 */
-	options.c_oflag = 0;			   /* 输出模式 */
-	options.c_lflag = 0;			   /* 不激活终端模式 */
 
 	switch(baud_rate)
 	{
@@ -61,15 +52,24 @@ int init_serial(int *fd, char *device, int baud_rate)
 			baud_rate = B115200;			
 		default:
 		break;
-	}
-
-	cfsetispeed(&options, baud_rate);	 /* 设置波特率 */
-	cfsetospeed(&options, baud_rate); //设置输出波特率
+	}	
+	
+	/* 2.修改获得的参数 */
+	options.c_cflag |= CLOCAL | CREAD; /* 设置控制模块状态：本地连接，接收使能 */
+	options.c_cflag &= ~CSIZE;         /* 字符长度，设置数据位之前，一定要屏蔽这一位 */
+	options.c_cflag &= ~CRTSCTS;       /* 无硬件流控 */
+	options.c_cflag |= CS8;            /* 8位数据长度 */
+	options.c_cflag &= ~CSTOPB;        /* 1位停止位 */
+	options.c_iflag |= IGNPAR;         /* 无奇偶校验 */
+	options.c_oflag = 0;               /* 输出模式 */
+	options.c_lflag = 0;               /* 不激活终端模式 */
+	cfsetospeed(&options, baud_rate);    /* 设置波特率 */
 
 	/* 3.设置新属性: TCSANOW，所有改变立即生效 */
-	tcflush(fd_serial, TCIFLUSH);	   /* 溢出数据可以接收，但不读 */
+	tcflush(fd_serial, TCIFLUSH);      /* 溢出数据可以接收，但不读 */
 	tcsetattr(fd_serial, TCSANOW, &options);
 
+	printf("open serial port : %s successfully!!!\n", device);
 	return 0;
 }
 
@@ -197,7 +197,7 @@ int main(int argc, char *argv[])
 	
 	int baud_rate = atoi(argv[2]);
 	init_serial(&satfd, argv[1], baud_rate);
-	printf("satfd = %d baud_rate=%d\n",satfd, B9600);
+	printf("satfd = %d baud_rate=%d\n",B115200, B9600);
 	pthread_t thread_checksat;
 	pthread_create(&thread_checksat, NULL, func_xx, NULL);
 	char buf[1024]={0};

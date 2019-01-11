@@ -18,6 +18,8 @@
 	defined (CONFIG_RALINK_MT7620) || defined (CONFIG_RALINK_MT7621) ||\
 	defined (CONFIG_RALINK_MT7628)
 #define CONFIG_RALINK_PCMFRACDIV	1
+#define CONFIG_RALINK_PCMSLOTMODE	0
+
 #endif
 
 #if defined (CONFIG_RALINK_MT7621)
@@ -264,7 +266,7 @@
 #ifdef PCM_IN_CLK
 #define CONFIG_PCM_EXT_CLK_EN			0
 #define CONFIG_PCM_CLKOUT_EN			1	/* It should be always one */
-#define CONFIG_PCM_EXT_FSYNC			0
+#define CONFIG_PCM_EXT_FSYNC			1
 #else
 #define CONFIG_PCM_EXT_CLK_EN			0
 #define CONFIG_PCM_CLKOUT_EN			1	/* It should be always one */

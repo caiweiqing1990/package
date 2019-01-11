@@ -57,8 +57,8 @@ define Package/satfi/install
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/3g.chat $(1)/etc/chatscripts/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/chatscripts/sat-sm2700.chat $(1)/etc/chatscripts/
 	
-	$(INSTALL_DIR) $(1)/lib/netifd/proto
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/3g.sh $(1)/lib/netifd/proto/
+#	$(INSTALL_DIR) $(1)/lib/netifd/proto
+#	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/3g.sh $(1)/lib/netifd/proto/
 #	$(INSTALL_BIN) $(PKG_BUILD_DIR)/lib/netifd/proto/ppp.sh $(1)/lib/netifd/proto/
 		
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/usb
