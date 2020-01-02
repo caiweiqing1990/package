@@ -34,7 +34,7 @@ proto_3g_setup() {
         /dev/ttyGPRS)
             chat="/etc/chatscripts/3g.chat"
         ;;
-        /dev/ttySAT1)
+        /dev/ttySAT0)
             chat="/etc/chatscripts/sat-sm2700.chat"
         ;;
         /dev/ttyACM0)
@@ -96,7 +96,7 @@ proto_3g_setup() {
 	esac
 		
     case "$device" in
-        /dev/ttySAT1)
+        /dev/ttySAT0)
 			connect="${apn:+USE_APN=$apn }DIALNUMBER=$dialnumber /usr/sbin/chat -t5 -v -E -f $chat"
 			ppp_generic_setup "$interface" \
 				noaccomp \

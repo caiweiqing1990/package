@@ -4,7 +4,7 @@ SYMLINK0="ttyGPRS0"
 SYMLINK1="ttyGPRS1"
 SYMLINK2="ttyGPS"
 
-#[ -e /dev/ttyS0 ] && ln -s /dev/ttyS0 /dev/${SYMLINK2}
+[ -e /dev/ttyS0 ] && ln -s /dev/ttyS0 /dev/${SYMLINK2}
 
 if [ "${DEVTYPE}" = "usb_device" ];
 then exit

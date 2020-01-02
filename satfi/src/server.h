@@ -46,9 +46,6 @@
 #define APP_PHONE_MONEY_CMD			  		0X0020
 #define APP_PHONE_MONEY_RSP           		0X8020
 
-#define APP_MESSAGE_MONEY_CMD			  	0X0054
-#define APP_MESSAGE_MONEY_RSP           	0X8054
-
 #define APP_GRP_UPLOAD_MESSAGE_CMD    		0X0021
 #define APP_GRP_UPLOAD_MESSAGE_RSP    		0X8021
 #define APP_GRP_UPLOAD_VOICE_CMD      		0X0022
@@ -219,7 +216,7 @@ typedef struct _upload_message_req
 	Header header;
 	char MsID[6];
 	char TargetGrpID[6];
-	int Name;
+	int ID;
 	char Message[0]; 
 } Msg_Upload_Message_Req;
 
@@ -228,7 +225,7 @@ typedef struct _upload_message_rsp
 	Header header;
 	char MsID[6];
 	unsigned short Result:8;
-	int Name;
+	int ID;
 } Msg_Upload_Message_Rsp;
 
 
@@ -238,7 +235,7 @@ typedef struct _upload_voice_req
 	Header header;
 	char MsID[6];
 	char TargetGrpID[6];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -267,7 +264,7 @@ typedef struct _upload_picture_req
 	Header header;
 	char MsID[6];
 	char TargetGrpID[6];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -474,31 +471,13 @@ typedef struct _phone_money_rsp
 	unsigned int Money;
 } Msg_Phone_Money_Rsp;
 
-//APP_MESSAGE_MONEY_CMD
-typedef struct _message_money_req
-{
-	Header header;
-	char MsID[6];
-	char MsPhoneNum[6];
-	char DesPhoneNum[6];
-	unsigned long long StartTime;
-	unsigned int Money;
-} Msg_Message_Money_Req;
-
-typedef struct _message_money_rsp
-{
-	Header header;
-	char MsID[6];
-	unsigned int Money;
-} Msg_Message_Money_Rsp;
-
 //Grp Upload Message
 typedef struct _grp_upload_message_req
 {
 	Header header;
 	char MsID[6];
 	char TargetGrpID[11];
-	int Name;
+	int ID;
 	char Message[0]; 
 } Msg_Grp_Upload_Message_Req;
 
@@ -507,7 +486,7 @@ typedef struct _grp_upload_message_rsp
 	Header header;
 	char MsID[6];
 	unsigned short Result:8;
-	int Name;
+	int ID;
 } Msg_Grp_Upload_Message_Rsp;
 
 //Grp Upload Voice
@@ -516,7 +495,7 @@ typedef struct _grp_upload_voice_req
 	Header header;
 	char MsID[6];
 	char TargetGrpID[11];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -539,7 +518,7 @@ typedef struct _grp_upload_picture_req
 	Header header;
 	char MsID[6];
 	char TargetGrpID[11];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -770,13 +749,6 @@ typedef struct _ptt_in
 	char PTT_MS_Name[30];
 } Msg_Ptt_In;
 
-//PTT_VOICE
-typedef struct _ptt_voice
-{
-	Header header;
-	char FromMsID[6];
-} Msg_Ptt_Voice;
-
 typedef struct _ptt_in_rsp
 {
 	Header header;
@@ -840,7 +812,7 @@ typedef struct _mmt_voice
 	Header header;
 	unsigned short MsNum;
 	char MsID[6];
-//	char data[0];
+	//char data[0];
 } Msg_Mmt_Voice;
 
 //APP_SPTT_NOTIFY

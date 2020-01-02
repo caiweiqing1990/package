@@ -3,9 +3,12 @@ ABORT   'NO CARRIER'
 ABORT   ERROR
 REPORT  CONNECT
 TIMEOUT 300
+""      "AT+GPSTRACK=1,0,16"
+""      "AT+CSQ"
 ""      "AT"
-OK      "AT+CGEREP=0,1"
-OK      "AT+CGDCONT=1,\"IP\",\"cmwap\",,0,0"
-OK      'AT+CGEQREQ=1,3,64,2048,0,0,0,1500,\"0E0\",\"0E0\",,0,0'
-OK      "ATDT*98*1#"
+OK      "AT+CRC=1"
+OK      "AT+CSNS=3"
+OK      'AT+CGDCONT=1,\"IP\",\"$USE_APN\"'
+SAY     "Calling UMTS/GPRS"
+OK      "ATD$DIALNUMBER"
 CONNECT ' '

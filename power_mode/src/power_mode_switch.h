@@ -41,26 +41,13 @@
 #define SAT_OFF		5
 #define GPS_ON		6
 #define GPS_OFF		7
-#define GE1_TXD2_ON		8
-#define GE1_TXD2_OFF	9
-
 /*peripheral mode*/
 #define VD5_ON		*GPIO71_40_DATA &=~(1<<19)//ND_D7 59
 #define VD5_OFF		*GPIO71_40_DATA |=(1<<19)//ND_D7 59
-#define USB_HUP_5V_disab	*GPIO71_40_DATA |=(1<<4)//JTAG_TRST44
-#define USB_HUP_5V_EN	*GPIO71_40_DATA &=~(1<<4)//JTAG_TRST44 USB_HUP_5V_EN USB_HUP_5V_disab
+#define USB_HUP_5V_EN	*GPIO71_40_DATA |=(1<<4)//JTAG_TRST44
+#define USB_HUP_5V_disab	*GPIO71_40_DATA &=~(1<<4)//JTAG_TRST44
 #define PERIOHERAL_GPIO_OUT	*GPIO71_40_DIR |= (1<<4)|(1<<19)
 #define PERIOHERAL_GPIO_IN	*GPIO71_40_DIR &=~((1<<4)|(1<<19))
-/*GPS mode*/
-#define GPS_ONOFF_L		*GPIO71_40_DATA &=~(1<<8)
-#define GPS_ONOFF_H		*GPIO71_40_DATA |=(1<<8)
-#define GPS_ONOFF_OUT	*GPIO71_40_DIR |= (1<<8)//NA_ND_wp 48 
-#define GPS_ONOFF_IN		*GPIO71_40_DIR &=~(1<<8)//NA_ND_wp 48 
-
-#define GPS_2_ONOFF_L		*GPIO71_40_DATA &=~(1<<7)
-#define GPS_2_ONOFF_H		*GPIO71_40_DATA |=(1<<7)
-#define GPS_2_ONOFF_OUT		*GPIO71_40_DIR |= (1<<7)//NA_RE_n 47 
-#define GPS_2_ONOFF_IN		*GPIO71_40_DIR &=~(1<<7)//NA_RE_n 47 
 
 /*9602 mode*/
 #define Iridium9602_ON_L	*GPIO71_40_DATA |=(1<<1)//JTAG_TD1 41
@@ -72,7 +59,7 @@
 #define Iridium9602_ON_OUT	*GPIO71_40_DIR |= (1<<1)
 #define Iridium9602_ON_IN	*GPIO71_40_DIR &=~((1<<1))
 /*3732 mode*/
-#define GPRS_POWER_L		*GPIO71_40_DATA &=~(1<<0)//JTAG_DO 40
+#define GPRS_POWER_L		*GPIO71_40_DATA &=~(1<<0)//JTAG_TDO 40
 #define GPRS_POWER_H		*GPIO71_40_DATA |=(1<<0)
 #define M3732_ONOFF_L 	*GPIO71_40_DATA &=~(1<<10)
 #define M3732_ONOFF_H 	*GPIO71_40_DATA |=(1<<10)
@@ -92,50 +79,17 @@
 #define SAT_GPIO_OUT		*GPIO71_40_DIR |= (1<<11)|(1<<9)|(1<<3)|(1<<2)// ,NA_ND_RB_N 49 ,NA_ND_ALE 51 ,EPHY_tck 43 ,EPHY_TMS 42
 #define SAT_GPIO_IN		*GPIO71_40_DIR &=~((1<<11)|(1<<9)|(1<<3)|(1<<2))// ,NA_ND_RB_N 49 ,NA_ND_ALE 51 ,EPHY_tck 43 ,EPHY_TMS 42
 #define GPIO_OUT		*GPIO23_00_DIR |= (1<<0)
-#define GPIO_IN			*GPIO23_00_DIR |=~((1<<0))
+#define GPIO_IN		*GPIO23_00_DIR |=~((1<<0))
 
-#define GE1_TXD2_OUT	*GPIO39_24_DIR |= (0x1<<2)
-#define GE1_TXD2_H		*GPIO39_24_DATA |= (0x1<<2)
-#define GE1_TXD2_L		*GPIO39_24_DATA &= ~(0x1<<2)
+/*USB_HUP*/
+#define USB_HUP_5V_EN_OUT		*GPIO71_40_DIR |= (1<<4)	//JTAG_TRST	44
+#define USB_HUP_5V_EN_IN		*GPIO71_40_DIR &=~ (1<<4)
+#define USB_HUP_5V_EN_H			*GPIO71_40_DATA |= (1<<4)
+#define USB_HUP_5V_EN_L			*GPIO71_40_DATA &=~ (1<<4)
 
-#define POWER_KEY_IN	*GPIO71_40_DIR &= ~(0x1<<20)	//gpio#60 GE2_TXD0
-#define POWER_KEY_OUT	*GPIO71_40_DIR |= (0x1<<20)
-#define POWER_KEY_H		*GPIO71_40_DATA |= (0x1<<20)
-#define POWER_KEY_L		*GPIO71_40_DATA &= ~(0x1<<20)
-
-#define RSTIN_N_IN		*GPIO71_40_DIR &=~(0x1<<24)		//gpio#64 GE2_TXEN
-#define RSTIN_N_OUT		*GPIO71_40_DIR |= (0x1<<24)
-#define RSTIN_N_H		*GPIO71_40_DATA |= (0x1<<24)
-#define RSTIN_N_L		*GPIO71_40_DATA &=~(0x1<<24)
-
-//以下输入输出都是在主机立场说的，MSM01A作为slave
-//send data
-#define A2B_WAKEUP_IN	*GPIO71_40_DIR &=~(0x1<<19)		//ND_D7 gpio#59
-#define A2B_WAKEUP_OUT	*GPIO71_40_DIR |=(0x1<<19)		//					作为输出 下降沿唤醒模块
-#define A2B_WAKEUP_H	*GPIO71_40_DATA |=(0x1<<19)
-#define A2B_WAKEUP_L	*GPIO71_40_DATA &=~(0x1<<19)
-
-#define B2A_SLEEP_IN	*GPIO71_40_DIR &=~(0x1<<16)		//ND_D4 gpio#56 	作为输入 检测到高电平，表示模块已经睡眠
-#define B2A_SLEEP_OUT	*GPIO71_40_DIR |= (0x1<<16)
-#define B2A_SLEEP_H		*GPIO71_40_DATA |=(0x1<<16)
-#define B2A_SLEEP_L		*GPIO71_40_DATA &=~(0x1<<16)
-#define B2A_SLEEP_STAT  ((*GPIO71_40_DATA & (0x1<<16)) > 0 ? 1:0)
-
-//recv data
-#define B2A_WAKEUP_IN	*GPIO71_40_DIR &=~(0x1<<18)		//ND_D6 gpio#58 	作为输入，用于模块唤醒主机
-#define B2A_WAKEUP_OUT	*GPIO71_40_DIR |= (0x1<<18)
-#define B2A_WAKEUP_H	*GPIO71_40_DATA |=(0x1<<18)
-#define B2A_WAKEUP_L	*GPIO71_40_DATA &=~(0x1<<18)
-#define B2A_WAKEUP_STAT	((*GPIO71_40_DATA & (0x1<<18)) > 0 ? 1:0)
-
-#define A2B_SLEEP_IN	*GPIO71_40_DIR &=~(0x1<<17)		//ND_D5 gpio#57 
-#define A2B_SLEEP_OUT	*GPIO71_40_DIR |= (0x1<<17)		//					作为输出,输出低电平通知模块主机处于正常工作转态
-#define A2B_SLEEP_H		*GPIO71_40_DATA |=(0x1<<17)
-#define A2B_SLEEP_L		*GPIO71_40_DATA &=~(0x1<<17)
-
-//gstar
-#define ENABLE_GSTAR_OUT	*GPIO39_24_DIR |= (1<<5)	//GE1_TXCLK GPIO#29
-#define ENABLE_GSTAR		*GPIO39_24_DATA &= ~(1<<5)
-#define DISABLE_GSTAR		*GPIO39_24_DATA |= (1<<5)
-
+/*GPS mode*/
+#define GPS_ONOFF_L		*GPIO71_40_DATA &=~(1<<8)
+#define GPS_ONOFF_H		*GPIO71_40_DATA |=(1<<8)
+#define GPS_ONOFF_OUT	*GPIO71_40_DIR |= (1<<8)//NA_ND_wp 48 
+#define GPS_ONOFF_IN	*GPIO71_40_DIR &=~(1<<8)//NA_ND_wp 48 
 #endif

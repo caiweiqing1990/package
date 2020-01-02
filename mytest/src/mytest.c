@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
 	if(argc == 4)
 	{
 		//printf("%s %d\n", argv[3], strlen(argv[3]));
-		sprintf(buf,"%s\r", argv[3]);
+		sprintf(buf,"%s\r\n", argv[3]);
 		printf("buf=%s\n", buf);
 		printf("buf=%d\n", strlen(buf));
 		uart_send(satfd, buf, strlen(buf));		
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
 		uart_send(satfd, buf, 1);
 	}
 	
-	while(1)
+	//while(1)
 	{
 		sleep(5);
 	}

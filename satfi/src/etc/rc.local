@@ -1,4 +1,17 @@
-# Put your custom commands here that should be executed once
-# the system init finished. By default this file does nothing.
-#checkgprs.sh
-exit 0
+# 所有#号开头的是注释，完成配置点击下面Submit按钮，重启终端生效
+
+#配置串口透传的服务器IP,port,协议TCP
+[config]
+IP=119.23.160.82
+PORT=9096
+
+#配置需要开放的IP列表，需要将串口透传的服务器IP添加该列表。
+#如再增加一个IP，可加一行配置IP3=119.23.160.84，以此类推添加多个IP1，IP2，IP3...IPn
+[iplist]
+IP1=119.23.160.82
+#IP2=119.23.160.83
+#IP3=119.23.160.84
+
+#配置开放所有IP，若OPEN=0，只开放上面iplist列表的IP，OPEN=1开放所有IP
+[route]
+OPEN=0

@@ -28,9 +28,9 @@ void print_usage(char *file)
 	printf("eg. \n");
 	printf("%s gprs on\n", file);
 	printf("%s gprs off\n", file);
-	printf("%s msm01a reset\n", file);
-	printf("%s msm01a on\n", file);
-	printf("%s msm01a off\n", file);
+	printf("%s sat_sm2500 reset\n", file);
+	printf("%s sat_sm2500 on\n", file);
+	printf("%s sat_sm2500 off\n", file);
 }
 
 int main(int argc, char **argv)
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-	else if(!strcmp("msm01a", argv[1])){
+	else if(!strcmp("sat_sm2500", argv[1])){
 		if (!strcmp("reset", argv[2])){
 			ioctl(fd_power, sat_system_reset);
 		}

@@ -1,4 +1,4 @@
-PRODID="1ab7/2200/100"
+PRODID="403/6001/600"
 SYMLINK="ttySAT"
 
 if [ "${DEVTYPE}" = "usb_device" ];

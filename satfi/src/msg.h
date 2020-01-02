@@ -115,8 +115,8 @@
 
 #define SPTT						0X0044
 #define SPTT_HUP					0X0045
-
 #define MO_VOICE					0X0046
+
 #define MT_VOICE					0X0047
 #define SPTT_NOTIFY					0X0048
 
@@ -141,17 +141,7 @@
 
 #define ASPTT_CANCEL				0X0055
 
-#define SATFI_PTT_IN				0X0056
-#define SATFI_PTT_HUPIN				0X0057
-
-#define SEND_MESSAGE				0x0058
-#define SEND_MESSAGE_RESP			0x8058
-
-#define RECV_MESSAGE				0x0059
-
-#define MODIFY_FAMILY_PHONE			0x0060
-#define ADD_FAMILY_PHONE			0x0061
-#define REMOVE_FAMILY_PHONE			0x0062
+#define APP_MAX_MCLASS				ASPTT_CANCEL
 
 #pragma pack (1)
 
@@ -165,9 +155,7 @@ typedef struct _msg_header
 typedef struct _app_connect_req
 {
   MsgHeader header;
-  char MsID[21];
-  unsigned short Count;
-  char FamiliarityNumber[10][21];
+  char userid[21];
 } MsgAppConnectReq;
 
 /*CONNECT_RSP*/
@@ -285,7 +273,7 @@ typedef struct _app_upload_message_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	int Name;
+	int ID;
 	char Message[0]; 
 }MsgUploadMessageReq;
 
@@ -295,7 +283,7 @@ typedef struct _app_upload_message_rsp
 	MsgHeader header;
 	char MsID[21];
 	unsigned short Result;
-	int Name;
+	int ID;
 }MsgUploadMessageRsp;
 
 /*UPLOAD_VOICE_CMD*/
@@ -304,7 +292,7 @@ typedef struct _app_upload_voice_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -334,7 +322,7 @@ typedef struct _app_upload_picture_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -560,7 +548,7 @@ typedef struct _app_grp_upload_message_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	int Name;
+	int ID;
 	char Message[0]; 
 } MsgGrpUploadMessageReq;
 
@@ -569,7 +557,7 @@ typedef struct _app_grp_upload_message_rsp
 	MsgHeader header;
 	char MsID[21];
 	unsigned short Result;
-	int Name;
+	int ID;
 } MsgGrpUploadMessageRsp;
 
 //Grp Upload Voice
@@ -578,7 +566,7 @@ typedef struct _app_grp_upload_voice_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -601,7 +589,7 @@ typedef struct _app_grp_upload_picture_req
 	MsgHeader header;
 	char MsID[21];
 	char TargetGrpID[21];
-	unsigned int Name;
+	unsigned int name;
 	unsigned int lengthtotal;
 	unsigned short packseq;
 	unsigned short packtotal;
@@ -969,58 +957,6 @@ typedef struct _app_asptt_cancel
 	char TARGET_MS_Id[21];
 	char Reserve[8];
 } MsgAspttCancel;
-
-//SEND_MESSAGE
-typedef struct _app_send_msg
-{
-	MsgHeader header;
-	char MsID[21];
-	char phonenum[21];
-	int ID;
-	char messagedata[0];
-} MsgSendMsg;
-
-typedef struct _app_send_msg_rsp
-{
-	MsgHeader header;
-	char MsID[21];
-	unsigned short Result;
-	int ID;
-} MsgSendMsgRsp;
-
-//RECV_MESSAGE
-typedef struct _app_recv_msg
-{
-	MsgHeader header;
-	char MsID[21];
-	char phonenum[21];
-	char messagedata[0];
-} MsgRecvMsg;
-
-//MODIFY_FAMILY_PHONE
-typedef struct _app_modify_family_phone
-{
-	MsgHeader header;
-	char MsID[21];
-	char oldPhone[21];
-	char newPhone[21];
-} MsgModifyPamilyPhone;
-
-//ADD_FAMILY_PHONE
-typedef struct _app_add_family_phone
-{
-	MsgHeader header;
-	char MsID[21];
-	char Phone[21];
-} MsgAddPamilyPhone;
-
-//REMOVE_FAMILY_PHONE
-typedef struct _app_remove_family_phone
-{
-	MsgHeader header;
-	char MsID[21];
-	char Phone[21];
-} MsgRemovePamilyPhone;
 
 #pragma pack ()
 

@@ -235,9 +235,9 @@ static irqreturn_t thuraya_interrupt(int irq, void *irqaction)
 
 static void peripheral_init_io(void)
 {
-       PERIOHERAL_GPIO_OUT;
-       VD5_ON;
-       USB_HUP_5V_EN;
+   PERIOHERAL_GPIO_OUT;
+   VD5_ON;
+   USB_HUP_5V_EN;
 }
 
 static void gps_mode_on(void)
@@ -275,7 +275,7 @@ static void thuraya_init_io(void)
 static void gprs_init_mode(void)
 {
 	GPRS_POWER_H;
-	USB_HUP_5V_disab;
+	//USB_HUP_5V_disab;
 	msleep(5);
 }
 
@@ -334,60 +334,6 @@ static void SAT_Turn_off(void)
 	SAT_OFF_L;
 }
 
-void MSM01A_power_on(void)
-{
-	printk("MSM01A_power_on\n");
-	RSTIN_N_OUT;
-	POWER_KEY_OUT;
-	POWER_KEY_L;
-	RSTIN_N_L;
-	msleep(500);
-	RSTIN_N_H;
-	msleep(500);
-	POWER_KEY_H;
-	msleep(500);
-	POWER_KEY_L;
-}
-
-void MSM01A_wakeup(void)
-{
-	printk("MSM01A_wakeup\n");
-	A2B_WAKEUP_OUT;
-	A2B_WAKEUP_H;
-	msleep(500);
-	A2B_WAKEUP_L;
-}
-
-void MSM01A_reset(void)
-{
-	RSTIN_N_OUT;
-	POWER_KEY_OUT;
-	POWER_KEY_L;
-	RSTIN_N_L;
-	msleep(300);
-	POWER_KEY_H;
-	RSTIN_N_H;
-	msleep(300);
-}
-
-void MSM01A_off(void)
-{
-	RSTIN_N_OUT;
-	POWER_KEY_OUT;
-	POWER_KEY_L;
-	RSTIN_N_L;
-	msleep(300);
-}
-
-void MSM01A_on(void)
-{
-	RSTIN_N_OUT;
-	POWER_KEY_OUT;
-	POWER_KEY_H;
-	RSTIN_N_H;
-	msleep(300);
-}
-
 static int power_mode_open(struct inode *inode, struct file *file)
 {
     //VD5_ON; 
@@ -426,26 +372,19 @@ static long power_mode_unlocked_ioctl(struct file *file, unsigned int cmd, unsig
 			turn_off_mode();
 		break;
 		case SAT_System_Reset:
-			//SAT_Reset_mode();
-			MSM01A_reset();
+			SAT_Reset_mode();
 		break;
 		case SAT_ON:
-			MSM01A_on();//
+			SAT_Turn_on();
 		break;
 		case SAT_OFF:
-			MSM01A_off();
+			SAT_Turn_off();
 		break;
 		case GPS_ON:
 			gps_mode_on();//
 		break;
 		case GPS_OFF:
 			gps_mode_off();
-		break;
-		case GE1_TXD2_ON:
-			GE1_TXD2_H;
-		break;
-		case GE1_TXD2_OFF:
-			GE1_TXD2_L;
 		break;
 		return -EINVAL;
 	}
@@ -525,34 +464,16 @@ static int __init power_mode_init(void)
 	*GPIOMODE &= ~((0x3<<18)|(0X1<<9)|(0X1<<10)|(0X1<<15)|(0X3<<7));
 	*GPIOMODE |= (0x2<<18)|(0X1<<9)|(0X1<<10)|(0X1<<15)|(0X2<<7);//NAD_SD | RGMII2 | RGMII1 | EPHY_LED_GPIO_MODE | MDIO
 	peripheral_init_io();
-	// gprs_init_io();
-	// thuraya_init_io();
-	M3732_GPIO_OUT; //SC2_4.2V_ON_OFF_OUT L
-	GPRS_POWER_L;
-	//msleep(2000);
-	msleep(2000);
-	GPS_ONOFF_OUT;	////SC2_UP_OUT 
-	GPS_ONOFF_L;
-
-	msleep(2000);
-	TX_5V_ONOFF9602_OUT; //5V_SC2_USB_ON_OFF_OUT  L
-	TX_5V_ONOFF9602_L;
-
-	GE1_TXD2_OUT;//用于电池电量提示
-	GE1_TXD2_H;
-	ENABLE_GSTAR_OUT;  	//GE1_TXCLK GPIO#29 ENABLE_GSTAR_OUT
-	ENABLE_GSTAR;	//ENABLE_GSTAR
-
-	//MSM01A_power_on();
-	//MSM01A_reset();	
-	printk("GPIO39_24_DIR=%08x,GPIO39_24_DATA=%08x,GPIOMODE=%08x\n", *GPIO39_24_DIR, *GPIO39_24_DATA, *GPIOMODE);
+	gprs_init_io();
+	thuraya_init_io();
 	return 0;
 }
 
 static void __exit power_mode_exit(void)
 {
-	USB_HUP_5V_disab;//USB HUB DISABLE
-	DISABLE_GSTAR; //DISABLE_GSTAR
+	//USB_HUP_5V_disab;//USB HUB DISABLE
+	//GPS_ONOFF_OUT;
+	//GPS_ONOFF_H;
 #ifdef IRQ_DEBUG
     free_irq(SURFBOARDINT_GPIO,NULL);//注销中断 
 #endif
